@@ -413,8 +413,23 @@ async function checkSession() {
   }
 }
 
+sb
+  .channel("requests-live")
+  .on(
+    "postgres_changes",
+    {
+      event: "*",
+      schema: "public",
+      table: "Requests"
+    },
+    () => {
+      loadRequests();
+    }
+  )
+  .subscribe();
 checkSession();
 </script>
 
 </body>
 </html>
+
