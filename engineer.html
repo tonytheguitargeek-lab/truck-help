@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engineering Queue</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #101820;
+  color: #fff;
+}
+
+.wrap {
+  max-width: 850px;
+  margin: auto;
+  padding: 24px;
+}
+
+h1 { margin-bottom: 5px; }
+
+.subtitle {
+  color: #aab4be;
+  margin-top: 0;
+}
+
+.panel {
+  background: #1b2630;
+  padding: 22px;
+  border-radius: 14px;
+  margin-top: 20px;
+}
+
+input, button {
+  width: 100%;
+  padding: 13px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 0;
+  margin-top: 10px;
+}
+
+input {
+  background: white;
+  color: #111;
+}
+
+button {
+  background: #1976d2;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button.complete {
+  background: #218739;
+}
+
+button.logout {
+  width: auto;
+  padding: 9px 16px;
+  background: #495866;
+}
+
+.ticket {
+  background: white;
+  color: #17212b;
+  padding: 20px;
+  border-radius: 12px;
+  margin-top: 16px;
+  border-left: 8px solid #1976d2;
+}
+
+.ticket.in-progress {
+  background: #fff8e1;
+  border-left: 8px solid #f9a825;
+}
+
+.ticket.show-critical {
+  border: 4px solid #d32f2f;
+  border-left: 10px solid #d32f2f;
+}
+
+.ticket h2 {
+  margin: 0 0 8px;
+}
+
+.meta {
+  color: #68727c;
+  font-size: 14px;
+  margin-top: 7px;
+}
+
+.status {
+  font-weight: bold;
+  font-size: 18px;
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: 7px;
+}
+
+.status.new {
+  background: #e3f2fd;
+  color: #0d47a1;
+}
+
+.status.progress {
+  background: #ffe082;
+  color: #5d4300;
+}
+
+.critical-label {
+  color: #b71c1c;
+  font-weight: bold;
+  margin-top: 8px;
+}
+
+.empty {
+  color: #aab4be;
+  padding: 30px 0;
+  text-align: center;
+}
+
+.error {
+  color: #ff8a80;
+  margin-top: 12px;
+}
+
+#dashboard { display: none; }
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+  <div id="loginPanel" class="panel">
+    <h1>Engineering Login</h1>
+    <p class="subtitle">Authorized engineering personnel</p>
+
+    <input id="email" type="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Password">
+
+    <button id="loginBtn">LOGIN</button>
+    <div id="loginError" class="error"></div>
+  </div>
+
+  <div id="dashboard">
+
+    <div class="topbar">
+      <div>
+        <h1>Engineering Queue</h1>
+        <p class="subtitle">Active requests</p>
+      </div>
+
+      <button class="logout" id="logoutBtn">Logout</button>
+    </div>
+
+    <div id="queue"></div>
+
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL =
+"https://cnqeqehgpidrsuerjzbg.supabase.co";
+
+const SUPABASE_KEY =
+"sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
+
+const sb = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+const loginPanel = document.getElementById("loginPanel");
+const dashboard = document.getElementById("dashboard");
+const queue = document.getElementById("queue");
+
+document.getElementById("loginBtn")
+  .addEventListener("click", login);
+
+document.getElementById("logoutBtn")
+  .addEventListener("click", logout);
+
+async function login() {
+
+  const email =
+    document.getElementById("email").value.trim();
+
+  const password =
+    document.getElementById("password").value;
+
+  const { error } =
+    await sb.auth.signInWithPassword({
+      email,
+      password
+    });
+
+  if (error) {
+    document.getElementById("loginError")
+      .textContent = error.message;
+    return;
+  }
+
+  showDashboard();
+}
+
+async function logout() {
+  await sb.auth.signOut();
+
+  dashboard.style.display = "none";
+  loginPanel.style.display = "block";
+}
+
+async function showDashboard() {
+  loginPanel.style.display = "none";
+  dashboard.style.display = "block";
+
+  await loadRequests();
+}
+
+async function loadRequests() {
+
+  const { data, error } =
+    await sb
+      .from("Requests")
+      .select("*")
+      .neq("status", "complete")
+      .order("created_at", { ascending: true });
+
+  if (error) {
+    queue.innerHTML =
+      '<div class="error">' +
+      escapeHtml(error.message) +
+      '</div>';
+    return;
+  }
+
+  renderRequests(data);
+}
+
+function renderRequests(requests) {
+
+  queue.innerHTML = "";
+
+  if (!requests.length) {
+    queue.innerHTML =
+      '<div class="empty">No active requests.</div>';
+    return;
+  }
+
+  requests.forEach(req => {
+
+    const ticket =
+      document.createElement("div");
+
+    let classes = "ticket";
+
+    if (req.status === "in-progress") {
+      classes += " in-progress";
+    }
+
+    if (req.priority === "show-critical") {
+      classes += " show-critical";
+    }
+
+    ticket.className = classes;
+
+    const time =
+      new Date(req.created_at)
+      .toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit"
+      });
+
+    let statusBlock = "";
+    let actionButton = "";
+
+    if (req.status === "new") {
+
+      statusBlock = `
+        <div class="status new">
+          ● NEW REQUEST
+        </div>
+      `;
+
+      actionButton = `
+        <button onclick="claimRequest(${req.id})">
+          CLAIM REQUEST
+        </button>
+      `;
+
+    } else if (req.status === "in-progress") {
+
+      statusBlock = `
+        <div class="status progress">
+          ● IN PROGRESS<br>
+          Claimed by ${escapeHtml(req.claimed_by || "Engineer")}
+        </div>
+      `;
+
+      actionButton = `
+        <button class="complete"
+          onclick="completeRequest(${req.id})">
+          MARK COMPLETE
+        </button>
+      `;
+    }
+
+    const critical =
+      req.priority === "show-critical"
+      ? `<div class="critical-label">
+           ⚠ SHOW CRITICAL
+         </div>`
+      : "";
+
+    ticket.innerHTML = `
+      <h2>${escapeHtml(req.location)}</h2>
+
+      <strong>
+        ${escapeHtml(req.description)}
+      </strong>
+
+      ${critical}
+
+      <div class="meta">
+        Requested by ${escapeHtml(req.requester_name)}
+        • ${time}
+        • ${escapeHtml(req.request_type)}
+      </div>
+
+      ${statusBlock}
+      ${actionButton}
+    `;
+
+    queue.appendChild(ticket);
+  });
+}
+
+async function claimRequest(id) {
+
+  const { data: { user } } =
+    await sb.auth.getUser();
+
+  const engineer =
+    user.email.split("@")[0];
+
+  const { error } =
+    await sb
+      .from("Requests")
+      .update({
+        status: "in-progress",
+        claimed_by: engineer,
+        claimed_at: new Date().toISOString()
+      })
+      .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadRequests();
+}
+
+async function completeRequest(id) {
+
+  const { error } =
+    await sb
+      .from("Requests")
+      .update({
+        status: "complete",
+        completed_at: new Date().toISOString()
+      })
+      .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadRequests();
+}
+
+function escapeHtml(value) {
+  const div = document.createElement("div");
+  div.textContent = value || "";
+  return div.innerHTML;
+}
+
+async function checkSession() {
+
+  const { data: { session } } =
+    await sb.auth.getSession();
+
+  if (session) {
+    showDashboard();
+  }
+}
+
+checkSession();
+</script>
+
+</body>
+</html>
