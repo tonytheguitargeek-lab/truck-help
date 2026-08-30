@@ -48,3 +48,16 @@ form.addEventListener("submit", async (event) => {
   submitBtn.disabled = false;
   submitBtn.textContent = "Submit Request";
 });
+
+
+// Pre-fill location when opened from a QR code
+const urlParams = new URLSearchParams(window.location.search);
+const qrLocation = urlParams.get("location");
+
+if (qrLocation) {
+  const locationField = document.getElementById("location");
+
+  if (locationField) {
+    locationField.value = qrLocation;
+  }
+}

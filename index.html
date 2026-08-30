@@ -225,7 +225,17 @@
       submitBtn.disabled = false;
       submitBtn.textContent = "Submit Request";
     });
-  </script>
 
+
+// Pre-fill location from QR code
+const urlParams = new URLSearchParams(window.location.search);
+const qrLocation = urlParams.get("location");
+
+if (qrLocation) {
+  document.getElementById("location").value = qrLocation;
+}
+
+
+</script>
 </body>
 </html>
