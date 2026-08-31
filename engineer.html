@@ -2676,6 +2676,70 @@ function filterRequestHistory() {
 
 
 
+
+async function deleteRequestPhoto(
+  requestId,
+  photoId,
+  storagePath
+) {
+
+  if (!window.confirm("Delete this photo?")) {
+    return;
+  }
+
+  const { data: request, error: requestError } =
+    await sb
+      .from("Requests")
+      .select("status")
+      .eq("id", requestId)
+      .single();
+
+  if (requestError) {
+    alert(
+      "Could not verify request status:\n\n" +
+      requestError.message
+    );
+    return;
+  }
+
+  if (request.status === "complete") {
+    alert("Completed request photos are permanent.");
+    await openRequestDetail(requestId);
+    return;
+  }
+
+  const { error: storageError } =
+    await sb.storage
+      .from("request-photos")
+      .remove([storagePath]);
+
+  if (storageError) {
+    alert(
+      "Could not delete photo file:\n\n" +
+      storageError.message
+    );
+    return;
+  }
+
+  const { error: rowError } =
+    await sb
+      .from("Request_Photos")
+      .delete()
+      .eq("id", photoId)
+      .eq("request_id", requestId);
+
+  if (rowError) {
+    alert(
+      "Photo file deleted, but photo record removal failed:\n\n" +
+      rowError.message
+    );
+    return;
+  }
+
+  await openRequestDetail(requestId);
+}
+
+
 function openAddRequestPhotos(requestId) {
 
   modal.innerHTML = `
@@ -3373,6 +3437,27 @@ const fmt = value =>
                     ·
                     ${escapeHtml(fmt(photo.created_at))}
                   </div>
+
+                  ${
+                    request.status !== "complete"
+                      ? `
+                        <button
+                          class="small-btn no-print"
+                          style="
+                            margin-top:10px;
+                            width:100%;
+                          "
+                          onclick='deleteRequestPhoto(
+                            ${request.id},
+                            ${photo.id},
+                            ${JSON.stringify(photo.storage_path)}
+                          )'>
+                          DELETE PHOTO
+                        </button>
+                      `
+                      : ""
+                  }
+
 
                 </div>
 
