@@ -3,201 +3,582 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Engineering Queue</title>
+<title>Truck Help - Engineering</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
-  background: #101820;
-  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #0b1728;
+  color: #ffffff;
 }
 
-.wrap {
-  max-width: 850px;
-  margin: auto;
-  padding: 24px;
-}
-
-h1 { margin-bottom: 5px; }
-
-.subtitle {
-  color: #aab4be;
-  margin-top: 0;
-}
-
-.panel {
-  background: #1b2630;
-  padding: 22px;
-  border-radius: 14px;
-  margin-top: 20px;
-}
-
-input, button {
-  width: 100%;
-  padding: 13px;
-  font-size: 16px;
-  border-radius: 8px;
-  border: 0;
-  margin-top: 10px;
-}
-
-input {
-  background: white;
-  color: #111;
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 button {
-  background: #1976d2;
-  color: white;
-  font-weight: bold;
   cursor: pointer;
 }
 
-button.complete {
-  background: #218739;
+.hidden {
+  display: none !important;
 }
 
-button.logout {
-  width: auto;
-  padding: 9px 16px;
-  background: #495866;
+.topbar {
+  background: #07111f;
+  border-bottom: 1px solid #26364c;
+  padding: 14px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
-.ticket {
-  background: white;
-  color: #17212b;
-  padding: 20px;
-  border-radius: 12px;
-  margin-top: 16px;
-  border-left: 8px solid #1976d2;
+.topbar-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
 }
 
-.ticket.in-progress {
-  background: #fff8e1;
-  border-left: 8px solid #f9a825;
+.brand {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: .8px;
 }
 
-.ticket.show-critical {
-  border: 4px solid #d32f2f;
-  border-left: 10px solid #d32f2f;
-}
-
-.ticket h2 {
-  margin: 0 0 8px;
-}
-
-.meta {
-  color: #68727c;
+.user-line {
   font-size: 14px;
-  margin-top: 7px;
+  color: #cbd5e1;
+  text-align: right;
 }
 
-.status {
-  font-weight: bold;
-  font-size: 18px;
-  margin-top: 14px;
-  padding: 10px;
+.menu-btn {
+  width: auto;
+  margin: 0;
+  padding: 9px 13px;
+  background: #1f3148;
+  color: white;
+  border: 0;
   border-radius: 7px;
-}
-
-.status.new {
-  background: #e3f2fd;
-  color: #0d47a1;
-}
-
-.status.progress {
-  background: #ffe082;
-  color: #5d4300;
-}
-
-.critical-label {
-  color: #b71c1c;
   font-weight: bold;
-  margin-top: 8px;
 }
 
-.empty {
-  color: #aab4be;
-  padding: 30px 0;
-  text-align: center;
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+.panel {
+  background: #ffffff;
+  color: #172033;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+}
+
+.login-wrap {
+  max-width: 430px;
+  margin: 70px auto;
+}
+
+h1, h2, h3 {
+  margin-top: 0;
+}
+
+label {
+  display: block;
+  font-weight: bold;
+  margin: 14px 0 6px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #b8c2d0;
+  border-radius: 7px;
+  background: white;
+  color: #172033;
+}
+
+textarea {
+  min-height: 95px;
+  resize: vertical;
+}
+
+.primary,
+.secondary,
+.danger,
+.priority-btn,
+.small-btn {
+  border: 0;
+  border-radius: 7px;
+  font-weight: 800;
+  padding: 12px 14px;
+}
+
+.primary {
+  background: #2563eb;
+  color: white;
+}
+
+.secondary {
+  background: #1f3148;
+  color: white;
+}
+
+.danger {
+  background: #b91c1c;
+  color: white;
+}
+
+.priority-btn {
+  background: #991b1b;
+  color: white;
+}
+
+.small-btn {
+  padding: 8px 11px;
+  background: #e5e7eb;
+  color: #172033;
+}
+
+.full {
+  width: 100%;
 }
 
 .error {
-  color: #ff8a80;
+  color: #b91c1c;
   margin-top: 12px;
+  font-weight: bold;
 }
 
-#dashboard { display: none; }
+.success {
+  color: #166534;
+  margin-top: 12px;
+  font-weight: bold;
+}
 
-.topbar {
+.show-header {
+  background: #ffffff;
+  color: #172033;
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.show-title {
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.show-venue {
+  color: #64748b;
+  margin-top: 3px;
+}
+
+.tally {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.tally-box {
+  background: #eef2f7;
+  border-radius: 9px;
+  padding: 12px;
+  text-align: center;
+}
+
+.tally-number {
+  font-size: 25px;
+  font-weight: 900;
+}
+
+.tally-label {
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.tab {
+  flex: 1;
+  border: 0;
+  border-radius: 7px;
+  padding: 11px;
+  background: #1f3148;
+  color: white;
+  font-weight: bold;
+}
+
+.tab.active {
+  background: #f59e0b;
+  color: #111827;
+}
+
+.requests {
+  display: grid;
+  gap: 14px;
+}
+
+.request-card {
+  background: white;
+  color: #172033;
+  border-radius: 11px;
+  overflow: hidden;
+  border-left: 7px solid #2563eb;
+  box-shadow: 0 5px 18px rgba(0,0,0,.18);
+}
+
+.request-card.in-progress {
+  border-left-color: #f59e0b;
+}
+
+.request-card.priority {
+  border-left-color: #dc2626;
+  box-shadow: 0 0 0 2px #dc2626, 0 5px 18px rgba(0,0,0,.2);
+}
+
+.status-bar {
+  padding: 10px 14px;
+  font-weight: 900;
+  background: #eff6ff;
+}
+
+.in-progress .status-bar {
+  background: #fff7ed;
+}
+
+.priority .status-bar {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.request-body {
+  padding: 15px;
+}
+
+.request-name {
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.meta {
+  margin-top: 5px;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.phone-link {
+  color: #2563eb;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.badge {
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.badge.type {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.help-label {
+  font-size: 12px;
+  font-weight: 900;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.description {
+  font-size: 17px;
+  margin-top: 5px;
+  white-space: pre-wrap;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.actions button {
+  width: auto;
+}
+
+.empty {
+  background: white;
+  color: #64748b;
+  border-radius: 10px;
+  padding: 28px;
+  text-align: center;
+}
+
+.menu-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+}
+
+.menu-card {
+  background: white;
+  color: #172033;
+  border: 0;
+  border-radius: 11px;
+  padding: 22px 16px;
+  text-align: left;
+}
+
+.menu-card strong {
+  display: block;
+  font-size: 18px;
+}
+
+.menu-card span {
+  display: block;
+  margin-top: 5px;
+  color: #64748b;
+}
+
+.section-header {
   display: flex;
   justify-content: space-between;
+  gap: 10px;
   align-items: center;
-  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.engineer-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 12px 0;
+}
+
+.engineer-row:last-child {
+  border-bottom: 0;
+}
+
+.engineer-name {
+  font-weight: 900;
+}
+
+.engineer-role {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.inactive {
+  opacity: .55;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 100;
+}
+
+.modal {
+  width: min(500px, 100%);
+  background: white;
+  color: #172033;
+  border-radius: 12px;
+  padding: 20px;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.engineer-choice {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 13px;
+  margin-top: 8px;
+  background: #eaf0f7;
+  color: #172033;
+  text-align: left;
+  font-weight: 800;
+}
+
+.completed-card {
+  background: white;
+  color: #172033;
+  border-radius: 10px;
+  padding: 15px;
+  margin-bottom: 12px;
+}
+
+.completed-meta {
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.note {
+  background: #f1f5f9;
+  border-radius: 7px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.no-show {
+  background: white;
+  color: #172033;
+  border-radius: 12px;
+  padding: 30px;
+  text-align: center;
+}
+
+@media (max-width: 650px) {
+  .page {
+    padding: 12px;
+  }
+
+  .menu-board {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-inner {
+    align-items: flex-start;
+  }
+
+  .user-line {
+    font-size: 12px;
+  }
 }
 </style>
 </head>
 
 <body>
 
-<div class="wrap">
+<div id="loginView" class="page">
+  <div class="login-wrap panel">
+    <h2>Truck Help Engineering</h2>
 
-  <div id="loginPanel" class="panel">
-    <h1>Engineering Login</h1>
-    <p class="subtitle">Authorized engineering personnel</p>
+    <label>Email</label>
+    <input id="email" type="email" autocomplete="username">
 
-    <input id="email" type="email" placeholder="Email">
-    <input id="password" type="password" placeholder="Password">
+    <label>Password</label>
+    <input id="password" type="password" autocomplete="current-password">
 
-    <button id="loginBtn">LOGIN</button>
+    <button id="loginBtn" class="primary full" style="margin-top:18px;">
+      LOGIN
+    </button>
+
     <div id="loginError" class="error"></div>
   </div>
+</div>
 
-  <div id="dashboard">
+<div id="appView" class="hidden">
 
-    <div class="topbar">
+  <div class="topbar">
+    <div class="topbar-inner">
       <div>
-        <h1>Engineering Queue</h1>
-        <p class="subtitle">Active requests</p>
+        <div class="brand">TRUCK HELP</div>
+        <div id="currentEngineerLine" class="user-line"></div>
       </div>
 
-      <button class="logout" id="logoutBtn">Logout</button>
+      <button id="menuBtn" class="menu-btn">MENU</button>
     </div>
-
-    <div id="queue"></div>
-
   </div>
 
+  <div class="page">
+
+    <div id="activeView"></div>
+    <div id="menuView" class="hidden"></div>
+    <div id="completedView" class="hidden"></div>
+    <div id="engineersView" class="hidden"></div>
+    <div id="showsView" class="hidden"></div>
+
+  </div>
+</div>
+
+<div id="modalBackdrop" class="modal-backdrop hidden">
+  <div id="modal" class="modal"></div>
 </div>
 
 <script>
-const SUPABASE_URL =
-"https://cnqeqehgpidrsuerjzbg.supabase.co";
-
-const SUPABASE_KEY =
-"sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
+const SUPABASE_URL = "https://cnqeqehgpidrsuerjzbg.supabase.co";
+const SUPABASE_KEY = "sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
 
 const sb = supabase.createClient(
   SUPABASE_URL,
   SUPABASE_KEY
 );
 
-const loginPanel = document.getElementById("loginPanel");
-const dashboard = document.getElementById("dashboard");
-const queue = document.getElementById("queue");
+let selectedEngineer = null;
+let activeEngineers = [];
+let currentShow = null;
+let activeRequests = [];
+let completedRequests = [];
+let requestFilter = "all";
+
+let realtimeStarted = false;
+let knownRequestIds = new Set();
+let initialRequestLoad = true;
+
+const loginView = document.getElementById("loginView");
+const appView = document.getElementById("appView");
+const activeView = document.getElementById("activeView");
+const menuView = document.getElementById("menuView");
+const completedView = document.getElementById("completedView");
+const engineersView = document.getElementById("engineersView");
+const showsView = document.getElementById("showsView");
+const modalBackdrop = document.getElementById("modalBackdrop");
+const modal = document.getElementById("modal");
 
 document.getElementById("loginBtn")
   .addEventListener("click", login);
 
-document.getElementById("logoutBtn")
-  .addEventListener("click", logout);
+document.getElementById("menuBtn")
+  .addEventListener("click", showMenu);
 
 async function login() {
+  document.getElementById("loginError").textContent = "";
 
   const email =
     document.getElementById("email").value.trim();
@@ -212,224 +593,1260 @@ async function login() {
     });
 
   if (error) {
-    document.getElementById("loginError")
-      .textContent = error.message;
+    document.getElementById("loginError").textContent =
+      error.message;
     return;
   }
 
-  showDashboard();
+  await initializeApp();
 }
 
 async function logout() {
   await sb.auth.signOut();
 
-  dashboard.style.display = "none";
-  loginPanel.style.display = "block";
-}
+  selectedEngineer = null;
 
-async function showDashboard() {
-  loginPanel.style.display = "none";
-  dashboard.style.display = "block";
-
-  await loadRequests();
-}
-
-async function loadRequests() {
-
-  const { data, error } =
-    await sb
-      .from("Requests")
-      .select("*")
-      .neq("status", "complete")
-      .order("created_at", { ascending: true });
-
-  if (error) {
-    queue.innerHTML =
-      '<div class="error">' +
-      escapeHtml(error.message) +
-      '</div>';
-    return;
-  }
-
-  renderRequests(data);
-}
-
-function renderRequests(requests) {
-
-  queue.innerHTML = "";
-
-  if (!requests.length) {
-    queue.innerHTML =
-      '<div class="empty">No active requests.</div>';
-    return;
-  }
-
-  requests.forEach(req => {
-
-    const ticket =
-      document.createElement("div");
-
-    let classes = "ticket";
-
-    if (req.status === "in-progress") {
-      classes += " in-progress";
-    }
-
-    if (req.priority === "show-critical") {
-      classes += " show-critical";
-    }
-
-    ticket.className = classes;
-
-    const time =
-      new Date(req.created_at)
-      .toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit"
-      });
-
-    let statusBlock = "";
-    let actionButton = "";
-
-    if (req.status === "new") {
-
-      statusBlock = `
-        <div class="status new">
-          ● NEW REQUEST
-        </div>
-      `;
-
-      actionButton = `
-        <button onclick="claimRequest(${req.id})">
-          CLAIM REQUEST
-        </button>
-      `;
-
-    } else if (req.status === "in-progress") {
-
-      statusBlock = `
-        <div class="status progress">
-          ● IN PROGRESS<br>
-          Claimed by ${escapeHtml(req.claimed_by || "Engineer")}
-        </div>
-      `;
-
-      actionButton = `
-        <button class="complete"
-          onclick="completeRequest(${req.id})">
-          MARK COMPLETE
-        </button>
-      `;
-    }
-
-    const critical =
-      req.priority === "show-critical"
-      ? `<div class="critical-label">
-           ⚠ SHOW CRITICAL
-         </div>`
-      : "";
-
-    ticket.innerHTML = `
-      <h2>${escapeHtml(req.location)}</h2>
-
-      <strong>
-        ${escapeHtml(req.description)}
-      </strong>
-
-      ${critical}
-
-      <div class="meta">
-        Requested by ${escapeHtml(req.requester_name)}
-        • ${time}
-        • ${escapeHtml(req.request_type)}
-      </div>
-
-      ${statusBlock}
-      ${actionButton}
-    `;
-
-    queue.appendChild(ticket);
-  });
-}
-
-async function claimRequest(id) {
-
-  const { data: { user } } =
-    await sb.auth.getUser();
-
-  const engineer =
-    user.email.split("@")[0];
-
-  const { error } =
-    await sb
-      .from("Requests")
-      .update({
-        status: "in-progress",
-        claimed_by: engineer,
-        claimed_at: new Date().toISOString()
-      })
-      .eq("id", id);
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  await loadRequests();
-}
-
-async function completeRequest(id) {
-
-  const { error } =
-    await sb
-      .from("Requests")
-      .update({
-        status: "complete",
-        completed_at: new Date().toISOString()
-      })
-      .eq("id", id);
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  await loadRequests();
-}
-
-function escapeHtml(value) {
-  const div = document.createElement("div");
-  div.textContent = value || "";
-  return div.innerHTML;
+  loginView.classList.remove("hidden");
+  appView.classList.add("hidden");
 }
 
 async function checkSession() {
+  const { data } = await sb.auth.getSession();
 
-  const { data: { session } } =
-    await sb.auth.getSession();
-
-  if (session) {
-    showDashboard();
+  if (data.session) {
+    await initializeApp();
+  } else {
+    loginView.classList.remove("hidden");
+    appView.classList.add("hidden");
   }
 }
 
-sb
-  .channel("requests-live")
-  .on(
-    "postgres_changes",
-    {
-      event: "*",
-      schema: "public",
-      table: "Requests"
-    },
-    () => {
-      loadRequests();
+async function initializeApp() {
+  loginView.classList.add("hidden");
+  appView.classList.remove("hidden");
+
+  await loadEngineers();
+
+  const savedId =
+    localStorage.getItem("truckHelpEngineerId");
+
+  if (savedId) {
+    selectedEngineer =
+      activeEngineers.find(
+        e => String(e.id) === String(savedId)
+      ) || null;
+  }
+
+  updateEngineerLine();
+
+  if (!selectedEngineer) {
+    if (activeEngineers.length) {
+      chooseEngineer();
+    } else {
+      showEngineers();
     }
-  )
-  .subscribe();
+  } else {
+    await showActive();
+  }
+
+  startRealtime();
+}
+
+function updateEngineerLine() {
+  const line =
+    document.getElementById("currentEngineerLine");
+
+  if (!selectedEngineer) {
+    line.textContent = "No engineer selected";
+    return;
+  }
+
+  line.textContent =
+    selectedEngineer.name +
+    (selectedEngineer.role
+      ? " · " + selectedEngineer.role
+      : "");
+}
+
+async function loadEngineers() {
+  const { data, error } = await sb
+    .from("Engineers")
+    .select("*")
+    .order("name");
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  activeEngineers =
+    (data || []).filter(e => e.active);
+}
+
+async function loadCurrentShow() {
+  const { data, error } = await sb
+    .from("Shows")
+    .select("*")
+    .eq("active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error(error);
+    currentShow = null;
+    return;
+  }
+
+  currentShow = data || null;
+}
+
+async function loadRequests() {
+  if (!currentShow) {
+    activeRequests = [];
+    completedRequests = [];
+    renderActive();
+    return;
+  }
+
+  const { data, error } = await sb
+    .from("Requests")
+    .select("*")
+    .eq("show_id", currentShow.id)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  const rows = data || [];
+
+  const newIds =
+    rows
+      .filter(r => r.status !== "complete")
+      .map(r => String(r.id))
+      .filter(id => !knownRequestIds.has(id));
+
+  activeRequests =
+    rows.filter(r => r.status !== "complete");
+
+  completedRequests =
+    rows.filter(r => r.status === "complete")
+      .sort((a,b) =>
+        new Date(b.completed_at || b.created_at) -
+        new Date(a.completed_at || a.created_at)
+      );
+
+  if (!initialRequestLoad && newIds.length) {
+    ding();
+  }
+
+  knownRequestIds =
+    new Set(
+      rows
+        .filter(r => r.status !== "complete")
+        .map(r => String(r.id))
+    );
+
+  initialRequestLoad = false;
+
+  renderActive();
+
+  if (!completedView.classList.contains("hidden")) {
+    renderCompleted();
+  }
+}
+
+function sortActiveRequests(rows) {
+  return [...rows].sort((a,b) => {
+    if (!!a.is_priority !== !!b.is_priority) {
+      return a.is_priority ? -1 : 1;
+    }
+
+    return new Date(a.created_at) -
+           new Date(b.created_at);
+  });
+}
+
+async function showActive() {
+  hideViews();
+  activeView.classList.remove("hidden");
+
+  await loadCurrentShow();
+  await loadRequests();
+}
+
+function renderActive() {
+  if (activeView.classList.contains("hidden")) {
+    return;
+  }
+
+  if (!currentShow) {
+    activeView.innerHTML = `
+      <div class="no-show">
+        <h2>NO ACTIVE SHOW</h2>
+        <p>Start a show before accepting crew requests.</p>
+        <button class="primary"
+          onclick="showShows()">
+          START NEW SHOW
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const inProgressCount =
+    activeRequests.filter(
+      r => r.status === "in-progress"
+    ).length;
+
+  let rows = sortActiveRequests(activeRequests);
+
+  if (requestFilter === "mine" && selectedEngineer) {
+    rows =
+      rows.filter(
+        r => r.claimed_by === selectedEngineer.name
+      );
+  }
+
+  activeView.innerHTML = `
+    <div class="show-header">
+      <div class="show-title">
+        ${escapeHtml(currentShow.show_name)}
+      </div>
+      <div class="show-venue">
+        ${escapeHtml(currentShow.venue || "")}
+      </div>
+
+      <div class="tally">
+        <div class="tally-box">
+          <div class="tally-number">
+            ${activeRequests.length}
+          </div>
+          <div class="tally-label">Active</div>
+        </div>
+
+        <div class="tally-box">
+          <div class="tally-number">
+            ${inProgressCount}
+          </div>
+          <div class="tally-label">In Progress</div>
+        </div>
+
+        <div class="tally-box">
+          <div class="tally-number">
+            ${completedRequests.length}
+          </div>
+          <div class="tally-label">Completed</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button
+        class="tab ${requestFilter === "all" ? "active" : ""}"
+        onclick="setRequestFilter('all')">
+        ALL REQUESTS
+      </button>
+
+      <button
+        class="tab ${requestFilter === "mine" ? "active" : ""}"
+        onclick="setRequestFilter('mine')">
+        MY REQUESTS
+      </button>
+    </div>
+
+    <div class="requests">
+      ${
+        rows.length
+        ? rows.map(requestCardHtml).join("")
+        : `<div class="empty">No active requests.</div>`
+      }
+    </div>
+  `;
+}
+
+function requestCardHtml(r) {
+  const isProgress =
+    r.status === "in-progress";
+
+  const classes = [
+    "request-card",
+    isProgress ? "in-progress" : "",
+    r.is_priority ? "priority" : ""
+  ].join(" ");
+
+  let statusText = "NEW REQUEST";
+
+  if (isProgress) {
+    statusText =
+      "IN PROGRESS" +
+      (r.claimed_by
+        ? " — " + escapeHtml(r.claimed_by)
+        : "");
+  }
+
+  if (r.is_priority) {
+    statusText =
+      "PRIORITY — " + statusText;
+  }
+
+  let phone = "";
+
+  if (r.phone) {
+    const safePhone =
+      String(r.phone).replace(/[^\d+]/g, "");
+
+    phone = `
+      <div>
+        📱
+        <a class="phone-link"
+          href="sms:${safePhone}">
+          ${escapeHtml(r.phone)}
+        </a>
+      </div>
+    `;
+  }
+
+  let claimAction = "";
+
+  if (r.status === "new") {
+    claimAction = `
+      <button class="primary"
+        onclick="claimRequest(${r.id})">
+        CLAIM REQUEST
+      </button>
+    `;
+  } else if (
+    selectedEngineer &&
+    r.claimed_by !== selectedEngineer.name
+  ) {
+    claimAction = `
+      <button class="primary"
+        onclick="takeOverRequest(${r.id})">
+        TAKE OVER
+      </button>
+    `;
+  }
+
+  return `
+    <div class="${classes}">
+      <div class="status-bar">
+        ${statusText}
+      </div>
+
+      <div class="request-body">
+
+        <div class="request-name">
+          ${escapeHtml(r.requester_name || "")}
+        </div>
+
+        <div class="meta">
+          <div>
+            📍 ${escapeHtml(r.location || "")}
+          </div>
+          ${phone}
+        </div>
+
+        <div class="badges">
+          <span class="badge">
+            ${escapeHtml(r.department || "Other")}
+          </span>
+
+          <span class="badge type">
+            ${escapeHtml(r.request_type || "Other")}
+          </span>
+        </div>
+
+        <div class="help-label">
+          How can we help?
+        </div>
+
+        <div class="description">
+          ${escapeHtml(r.description || "")}
+        </div>
+
+        <div class="actions">
+
+          ${claimAction}
+
+          ${
+            isProgress
+            ? `
+              <button class="secondary"
+                onclick="openHandoff(${r.id})">
+                HAND OFF
+              </button>
+
+              <button class="secondary"
+                onclick="openComplete(${r.id})">
+                COMPLETE
+              </button>
+            `
+            : ""
+          }
+
+          ${
+            r.is_priority
+            ? `
+              <button class="small-btn"
+                onclick="setPriority(${r.id}, false)">
+                REMOVE PRIORITY
+              </button>
+            `
+            : `
+              <button class="priority-btn"
+                onclick="setPriority(${r.id}, true)">
+                PRIORITIZE
+              </button>
+            `
+          }
+
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function setRequestFilter(filter) {
+  requestFilter = filter;
+  renderActive();
+}
+
+async function claimRequest(id) {
+  if (!selectedEngineer) {
+    chooseEngineer();
+    return;
+  }
+
+  const { error } = await sb
+    .from("Requests")
+    .update({
+      status: "in-progress",
+      claimed_by: selectedEngineer.name,
+      claimed_at: new Date().toISOString()
+    })
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadRequests();
+}
+
+async function takeOverRequest(id) {
+  if (!selectedEngineer) {
+    chooseEngineer();
+    return;
+  }
+
+  const { error } = await sb
+    .from("Requests")
+    .update({
+      status: "in-progress",
+      claimed_by: selectedEngineer.name,
+      claimed_at: new Date().toISOString()
+    })
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadRequests();
+}
+
+async function setPriority(id, value) {
+  const { error } = await sb
+    .from("Requests")
+    .update({
+      is_priority: value
+    })
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadRequests();
+}
+
+function openHandoff(id) {
+  if (!activeEngineers.length) {
+    alert("No active engineers available.");
+    return;
+  }
+
+  modal.innerHTML = `
+    <h2>Hand Off Request</h2>
+    <p>Select the engineer taking this request.</p>
+
+    ${activeEngineers.map(e => `
+      <button
+        class="engineer-choice"
+        onclick="handoffRequest(${id}, ${e.id})">
+        ${escapeHtml(e.name)}
+        ${e.role ? " — " + escapeHtml(e.role) : ""}
+      </button>
+    `).join("")}
+
+    <button class="secondary full"
+      style="margin-top:14px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+async function handoffRequest(requestId, engineerId) {
+  const engineer =
+    activeEngineers.find(
+      e => String(e.id) === String(engineerId)
+    );
+
+  if (!engineer) {
+    return;
+  }
+
+  const { error } = await sb
+    .from("Requests")
+    .update({
+      status: "in-progress",
+      claimed_by: engineer.name,
+      claimed_at: new Date().toISOString()
+    })
+    .eq("id", requestId);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  closeModal();
+
+  if (
+    selectedEngineer &&
+    engineer.id === selectedEngineer.id
+  ) {
+    ding();
+  }
+
+  await loadRequests();
+}
+
+function openComplete(id) {
+  modal.innerHTML = `
+    <h2>Complete Request</h2>
+
+    <label>
+      Resolution / Notes (optional)
+    </label>
+
+    <textarea id="resolutionNotes"
+      placeholder="Example: Replaced bad SDI jumper"></textarea>
+
+    <button class="primary full"
+      style="margin-top:14px;"
+      onclick="completeRequest(${id})">
+      COMPLETE REQUEST
+    </button>
+
+    <button class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+async function completeRequest(id) {
+  const notes =
+    document.getElementById("resolutionNotes")
+      .value.trim();
+
+  const { error } = await sb
+    .from("Requests")
+    .update({
+      status: "complete",
+      completed_at: new Date().toISOString(),
+      completed_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null,
+      resolution_notes:
+        notes || null
+    })
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  closeModal();
+  await loadRequests();
+}
+
+function showMenu() {
+  hideViews();
+  menuView.classList.remove("hidden");
+
+  menuView.innerHTML = `
+    <div class="menu-board">
+
+      <button class="menu-card"
+        onclick="showActive()">
+        <strong>Active Requests</strong>
+        <span>Live engineering queue</span>
+      </button>
+
+      <button class="menu-card"
+        onclick="showCompleted()">
+        <strong>Completed</strong>
+        <span>Current show history</span>
+      </button>
+
+      <button class="menu-card"
+        onclick="showShows()">
+        <strong>Shows</strong>
+        <span>Start or close the current show</span>
+      </button>
+
+      <button class="menu-card"
+        onclick="showEngineers()">
+        <strong>Engineers</strong>
+        <span>Add or manage personnel</span>
+      </button>
+
+      <button class="menu-card"
+        onclick="chooseEngineer()">
+        <strong>Switch Engineer</strong>
+        <span>
+          ${
+            selectedEngineer
+              ? "Currently " + escapeHtml(selectedEngineer.name)
+              : "No engineer selected"
+          }
+        </span>
+      </button>
+
+      <button class="menu-card"
+        onclick="logout()">
+        <strong>Logout</strong>
+        <span>Sign this browser out</span>
+      </button>
+
+    </div>
+  `;
+}
+
+async function showCompleted() {
+  hideViews();
+  completedView.classList.remove("hidden");
+
+  await loadCurrentShow();
+
+  if (!currentShow) {
+    completedView.innerHTML = `
+      <div class="panel">
+        <h2>Completed</h2>
+        <p>No active show.</p>
+      </div>
+    `;
+    return;
+  }
+
+  await loadRequests();
+  renderCompleted();
+}
+
+function renderCompleted() {
+  completedView.innerHTML = `
+    <div class="panel">
+      <div class="section-header">
+        <div>
+          <h2 style="margin:0;">Completed</h2>
+          <div style="color:#64748b;">
+            ${escapeHtml(currentShow?.show_name || "")}
+          </div>
+        </div>
+
+        <button class="small-btn"
+          onclick="showMenu()">
+          BACK
+        </button>
+      </div>
+
+      ${
+        completedRequests.length
+        ? completedRequests
+            .map(completedCardHtml)
+            .join("")
+        : `<div class="empty">No completed requests yet.</div>`
+      }
+    </div>
+  `;
+}
+
+function completedCardHtml(r) {
+  return `
+    <div class="completed-card">
+
+      <div class="request-name">
+        ${escapeHtml(r.requester_name || "")}
+      </div>
+
+      <div class="badges">
+        <span class="badge">
+          ${escapeHtml(r.department || "Other")}
+        </span>
+
+        <span class="badge type">
+          ${escapeHtml(r.request_type || "Other")}
+        </span>
+      </div>
+
+      <div>
+        <strong>Location:</strong>
+        ${escapeHtml(r.location || "")}
+      </div>
+
+      <div style="margin-top:7px;">
+        <strong>Request:</strong>
+        ${escapeHtml(r.description || "")}
+      </div>
+
+      ${
+        r.resolution_notes
+        ? `
+          <div class="note">
+            <strong>Resolution:</strong>
+            ${escapeHtml(r.resolution_notes)}
+          </div>
+        `
+        : ""
+      }
+
+      <div class="completed-meta"
+        style="margin-top:10px;">
+
+        Requested:
+        ${formatDate(r.created_at)}
+
+        <br>
+
+        Claimed by:
+        ${escapeHtml(r.claimed_by || "—")}
+
+        <br>
+
+        Completed by:
+        ${escapeHtml(r.completed_by || "—")}
+
+        <br>
+
+        Completed:
+        ${formatDate(r.completed_at)}
+      </div>
+
+    </div>
+  `;
+}
+
+async function showEngineers() {
+  hideViews();
+  engineersView.classList.remove("hidden");
+
+  const { data, error } = await sb
+    .from("Engineers")
+    .select("*")
+    .order("name");
+
+  if (error) {
+    engineersView.innerHTML =
+      `<div class="panel">${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  const engineers = data || [];
+
+  engineersView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header">
+        <h2 style="margin:0;">Engineers</h2>
+
+        <button class="small-btn"
+          onclick="showMenu()">
+          BACK
+        </button>
+      </div>
+
+      <h3>Add Engineer</h3>
+
+      <label>Name</label>
+      <input id="newEngineerName"
+        placeholder="Tony">
+
+      <label>Role</label>
+      <select id="newEngineerRole">
+        <option>EIC</option>
+        <option>E2</option>
+        <option>A2</option>
+        <option>V2</option>
+        <option>Other</option>
+      </select>
+
+      <button class="primary"
+        style="margin-top:14px;"
+        onclick="addEngineer()">
+        ADD ENGINEER
+      </button>
+
+      <hr style="margin:22px 0;border:0;border-top:1px solid #e5e7eb;">
+
+      <h3>Personnel</h3>
+
+      ${
+        engineers.length
+        ? engineers.map(e => `
+            <div class="engineer-row ${e.active ? "" : "inactive"}">
+              <div>
+                <div class="engineer-name">
+                  ${escapeHtml(e.name)}
+                </div>
+                <div class="engineer-role">
+                  ${escapeHtml(e.role || "")}
+                  ·
+                  ${e.active ? "Active" : "Inactive"}
+                </div>
+              </div>
+
+              <button class="small-btn"
+                onclick="toggleEngineer(${e.id}, ${!e.active})">
+                ${e.active ? "DEACTIVATE" : "ACTIVATE"}
+              </button>
+            </div>
+          `).join("")
+        : `<div class="empty">No engineers added yet.</div>`
+      }
+
+    </div>
+  `;
+}
+
+async function addEngineer() {
+  const name =
+    document.getElementById("newEngineerName")
+      .value.trim();
+
+  const role =
+    document.getElementById("newEngineerRole")
+      .value;
+
+  if (!name) {
+    alert("Enter an engineer name.");
+    return;
+  }
+
+  const { data, error } = await sb
+    .from("Engineers")
+    .insert({
+      name,
+      role,
+      active: true
+    })
+    .select()
+    .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadEngineers();
+
+  selectedEngineer = data;
+
+  localStorage.setItem(
+    "truckHelpEngineerId",
+    data.id
+  );
+
+  updateEngineerLine();
+
+  await showActive();
+}
+
+async function toggleEngineer(id, active) {
+  const { error } = await sb
+    .from("Engineers")
+    .update({ active })
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  if (
+    selectedEngineer &&
+    String(selectedEngineer.id) === String(id) &&
+    !active
+  ) {
+    selectedEngineer = null;
+    localStorage.removeItem("truckHelpEngineerId");
+    updateEngineerLine();
+  }
+
+  await loadEngineers();
+  await showEngineers();
+}
+
+async function chooseEngineer() {
+  await loadEngineers();
+
+  if (!activeEngineers.length) {
+    closeModal();
+    await showEngineers();
+    return;
+  }
+
+  modal.innerHTML = `
+    <h2>Who's Using Truck Help?</h2>
+
+    ${activeEngineers.map(e => `
+      <button
+        class="engineer-choice"
+        onclick="selectEngineer(${e.id})">
+        ${escapeHtml(e.name)}
+        ${e.role ? " — " + escapeHtml(e.role) : ""}
+      </button>
+    `).join("")}
+
+    ${
+      selectedEngineer
+      ? `
+        <button class="secondary full"
+          style="margin-top:14px;"
+          onclick="closeModal()">
+          CANCEL
+        </button>
+      `
+      : ""
+    }
+  `;
+
+  openModal();
+}
+
+async function selectEngineer(id) {
+  const engineer =
+    activeEngineers.find(
+      e => String(e.id) === String(id)
+    );
+
+  if (!engineer) {
+    return;
+  }
+
+  selectedEngineer = engineer;
+
+  localStorage.setItem(
+    "truckHelpEngineerId",
+    engineer.id
+  );
+
+  updateEngineerLine();
+  closeModal();
+
+  await showActive();
+}
+
+async function showShows() {
+  hideViews();
+  showsView.classList.remove("hidden");
+
+  await loadCurrentShow();
+
+  if (currentShow) {
+    showsView.innerHTML = `
+      <div class="panel">
+        <div class="section-header">
+          <h2 style="margin:0;">Current Show</h2>
+          <button class="small-btn"
+            onclick="showMenu()">
+            BACK
+          </button>
+        </div>
+
+        <div class="show-title">
+          ${escapeHtml(currentShow.show_name)}
+        </div>
+
+        <div class="show-venue">
+          ${escapeHtml(currentShow.venue || "")}
+        </div>
+
+        <div style="margin-top:8px;color:#64748b;">
+          Started:
+          ${escapeHtml(currentShow.start_date || "")}
+        </div>
+
+        <button class="danger"
+          style="margin-top:20px;"
+          onclick="confirmCloseShow()">
+          CLOSE SHOW
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  showsView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header">
+        <h2 style="margin:0;">Start New Show</h2>
+
+        <button class="small-btn"
+          onclick="showMenu()">
+          BACK
+        </button>
+      </div>
+
+      <label>Show Name</label>
+      <input id="showNameInput"
+        placeholder="ACC Huddle — Clemson">
+
+      <label>Venue / Location</label>
+      <input id="venueInput"
+        placeholder="Memorial Stadium">
+
+      <label>Start Date</label>
+      <input id="startDateInput"
+        type="date">
+
+      <button class="primary"
+        style="margin-top:16px;"
+        onclick="startShow()">
+        START SHOW
+      </button>
+
+    </div>
+  `;
+
+  document.getElementById("startDateInput").value =
+    new Date().toISOString().slice(0,10);
+}
+
+async function startShow() {
+  const showName =
+    document.getElementById("showNameInput")
+      .value.trim();
+
+  const venue =
+    document.getElementById("venueInput")
+      .value.trim();
+
+  const startDate =
+    document.getElementById("startDateInput")
+      .value;
+
+  if (!showName) {
+    alert("Enter a show name.");
+    return;
+  }
+
+  const { error } = await sb
+    .from("Shows")
+    .insert({
+      show_name: showName,
+      venue,
+      start_date: startDate || null,
+      active: true,
+      started_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  initialRequestLoad = true;
+  knownRequestIds = new Set();
+
+  await showActive();
+}
+
+async function confirmCloseShow() {
+  await loadRequests();
+
+  const count = activeRequests.length;
+
+  const text =
+    count
+    ? `Close ${currentShow.show_name}?\n\n${count} request(s) are still active.`
+    : `Close ${currentShow.show_name}?`;
+
+  if (!confirm(text)) {
+    return;
+  }
+
+  await closeShow();
+}
+
+async function closeShow() {
+  if (!currentShow) {
+    return;
+  }
+
+  const { error } = await sb
+    .from("Shows")
+    .update({
+      active: false,
+      closed_at: new Date().toISOString(),
+      closed_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    })
+    .eq("id", currentShow.id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  currentShow = null;
+  activeRequests = [];
+  completedRequests = [];
+  initialRequestLoad = true;
+  knownRequestIds = new Set();
+
+  await showActive();
+}
+
+function startRealtime() {
+  if (realtimeStarted) {
+    return;
+  }
+
+  realtimeStarted = true;
+
+  sb
+    .channel("truck-help-v1")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "Requests"
+      },
+      async payload => {
+        const oldAssigned =
+          payload.old?.claimed_by;
+
+        const newAssigned =
+          payload.new?.claimed_by;
+
+        if (
+          selectedEngineer &&
+          newAssigned === selectedEngineer.name &&
+          oldAssigned &&
+          oldAssigned !== selectedEngineer.name
+        ) {
+          ding();
+        }
+
+        await loadRequests();
+      }
+    )
+    .subscribe();
+}
+
+function ding() {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      window.webkitAudioContext;
+
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.frequency.value = 880;
+
+    gain.gain.setValueAtTime(
+      0.12,
+      ctx.currentTime
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+      0.001,
+      ctx.currentTime + 0.16
+    );
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.16);
+  } catch (e) {
+    console.log("Audio notification unavailable.");
+  }
+}
+
+function openModal() {
+  modalBackdrop.classList.remove("hidden");
+}
+
+function closeModal() {
+  modalBackdrop.classList.add("hidden");
+  modal.innerHTML = "";
+}
+
+function hideViews() {
+  activeView.classList.add("hidden");
+  menuView.classList.add("hidden");
+  completedView.classList.add("hidden");
+  engineersView.classList.add("hidden");
+  showsView.classList.add("hidden");
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+
+  try {
+    return new Date(value)
+      .toLocaleString();
+  } catch {
+    return value;
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 checkSession();
 </script>
 
 </body>
 </html>
-

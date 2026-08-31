@@ -3,239 +3,415 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Engineering Help</title>
+  <title>Truck Help</title>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
-      font-family: Arial, sans-serif;
-      background: #f4f6f8;
-      color: #16202a;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #0b1728;
+      color: #ffffff;
     }
 
-    .container {
-      max-width: 520px;
-      margin: 40px auto;
-      background: white;
-      padding: 28px;
-      border-radius: 14px;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    .page {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 22px 16px 40px;
     }
 
-    h1 {
-      margin: 0 0 8px;
+    .header {
+      text-align: center;
+      margin-bottom: 22px;
     }
 
-    .sub {
-      margin: 0 0 24px;
-      color: #65707c;
+    .header h1 {
+      margin: 0;
+      font-size: 32px;
+      letter-spacing: 1px;
     }
 
-    label, fieldset {
+    .show-name {
+      margin-top: 10px;
+      font-size: 20px;
+      font-weight: bold;
+      color: #f59e0b;
+    }
+
+    .venue {
+      margin-top: 4px;
+      color: #cbd5e1;
+    }
+
+    .card {
+      background: #ffffff;
+      color: #172033;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    }
+
+    label {
       display: block;
-      margin-top: 18px;
+      font-weight: bold;
+      margin: 16px 0 7px;
     }
 
-    input, select, textarea, button {
+    label:first-child {
+      margin-top: 0;
+    }
+
+    input,
+    select,
+    textarea {
       width: 100%;
-      font-size: 16px;
-    }
-
-    input, select, textarea {
-      margin-top: 7px;
-      padding: 12px;
-      border: 1px solid #c8d0d8;
+      padding: 13px;
+      border: 1px solid #b9c2cf;
       border-radius: 8px;
+      font-size: 17px;
+      background: #ffffff;
     }
 
     textarea {
+      min-height: 120px;
       resize: vertical;
     }
 
-    fieldset {
-      border: 0;
-      padding: 0;
-      margin-left: 0;
-      margin-right: 0;
-    }
-
-    .radio {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .radio input {
-      width: auto;
+    .hint {
+      margin-top: 5px;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #64748b;
     }
 
     button {
-      margin-top: 24px;
-      padding: 14px;
+      width: 100%;
+      margin-top: 22px;
+      padding: 15px;
       border: 0;
       border-radius: 8px;
-      background: #0b3a66;
-      color: white;
+      background: #f59e0b;
+      color: #111827;
+      font-size: 18px;
       font-weight: bold;
       cursor: pointer;
     }
 
     button:disabled {
-      opacity: 0.6;
+      opacity: .55;
+      cursor: default;
     }
 
     .message {
-      margin-top: 20px;
+      margin-top: 14px;
+      text-align: center;
       font-weight: bold;
     }
 
-    .success { color: #16803a; }
-    .error { color: #b42318; }
+    .closed {
+      background: #ffffff;
+      color: #172033;
+      text-align: center;
+      border-radius: 12px;
+      padding: 32px 20px;
+    }
+
+    .closed h2 {
+      margin-top: 0;
+    }
+
+    .success {
+      display: none;
+      background: #ffffff;
+      color: #172033;
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .check {
+      width: 74px;
+      height: 74px;
+      margin: 0 auto 14px;
+      border-radius: 50%;
+      background: #16a34a;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 46px;
+      font-weight: bold;
+    }
+
+    .success h2 {
+      text-align: center;
+      margin: 0 0 18px;
+    }
+
+    .request-number {
+      text-align: center;
+      color: #f59e0b;
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+
+    .summary {
+      background: #f1f5f9;
+      border-radius: 9px;
+      padding: 16px;
+      line-height: 1.55;
+    }
+
+    .summary-row {
+      margin-bottom: 8px;
+    }
+
+    .summary-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .success-note {
+      text-align: center;
+      margin: 18px 0 0;
+      line-height: 1.5;
+    }
+
+    .secondary {
+      background: #172033;
+      color: white;
+    }
   </style>
 </head>
+
 <body>
+  <div class="page">
 
-  <main class="container">
-    <h1>Engineering Help</h1>
-    <p class="sub">Submit a request to the engineering team.</p>
+    <div class="header">
+      <h1>TRUCK HELP</h1>
+      <div id="showName" class="show-name">Checking current show...</div>
+      <div id="venue" class="venue"></div>
+    </div>
 
-    <form id="requestForm">
+    <div id="closedState" class="closed" style="display:none;">
+      <h2>Engineering Help is not currently active.</h2>
+      <p>There is no active show at this time.</p>
+    </div>
 
-      <label>
-        Your Name
-        <input id="requester_name" type="text" required>
-      </label>
+    <div id="formCard" class="card" style="display:none;">
+      <form id="requestForm">
 
-      <label>
-        Location
-        <input id="location" type="text"
-               placeholder="Camera 3, Tape 1, Field Audio..."
-               required>
-      </label>
+        <label for="name">Name / Nickname</label>
+        <input id="name" type="text" required autocomplete="name">
 
-      <label>
-        Request Type
-        <select id="request_type" required>
-          <option value="issue">Something is not working</option>
-          <option value="gear">Need gear</option>
+        <label for="department">Department</label>
+        <select id="department" required>
+          <option value="">Select department...</option>
+          <option>Camera</option>
+          <option>Audio</option>
+          <option>Video</option>
+          <option>Replay / EVS</option>
+          <option>Graphics</option>
+          <option>Production</option>
+          <option>Transmission / RF</option>
+          <option>Utility</option>
+          <option>Engineering</option>
+          <option>Other</option>
         </select>
-      </label>
 
-      <label>
-        What do you need?
-        <textarea id="description" rows="4" required></textarea>
-      </label>
+        <label for="location">Where are you?</label>
+        <input
+          id="location"
+          type="text"
+          required
+          placeholder="Stage Left, Truck, Camera 4, Announce Booth..."
+        >
 
-      <fieldset>
-        <legend>Priority</legend>
+        <label for="phone">Phone Number (optional)</label>
+        <input
+          id="phone"
+          type="tel"
+          autocomplete="tel"
+          placeholder="For a text reply or update"
+        >
+        <div class="hint">
+          Leave a number if you'd like Engineering to be able to text you with an answer or update.
+        </div>
 
-        <label class="radio">
-          <input type="radio"
-                 name="priority"
-                 value="normal"
-                 checked>
-          Normal
-        </label>
+        <label for="requestType">Request Type</label>
+        <select id="requestType" required>
+          <option value="">Select request type...</option>
+          <option value="Gear / Supplies">Gear / Supplies</option>
+          <option value="Technical Problem">Technical Problem</option>
+          <option value="Other">Other</option>
+        </select>
 
-        <label class="radio">
-          <input type="radio"
-                 name="priority"
-                 value="show-critical">
-          Show Critical
-        </label>
-      </fieldset>
+        <label for="description">How can we help?</label>
+        <textarea id="description" required></textarea>
 
-      <button id="submitBtn" type="submit">
-        Submit Request
+        <button id="submitButton" type="submit">SUBMIT REQUEST</button>
+        <div id="message" class="message"></div>
+      </form>
+    </div>
+
+    <div id="successCard" class="success">
+      <div class="check">✓</div>
+      <h2>REQUEST RECEIVED</h2>
+
+      <div id="requestNumber" class="request-number"></div>
+
+      <div class="summary">
+        <div class="summary-row"><strong>Name:</strong> <span id="sName"></span></div>
+        <div class="summary-row"><strong>Department:</strong> <span id="sDepartment"></span></div>
+        <div class="summary-row"><strong>Location:</strong> <span id="sLocation"></span></div>
+        <div class="summary-row"><strong>Type:</strong> <span id="sType"></span></div>
+        <div class="summary-row"><strong>Request:</strong> <span id="sDescription"></span></div>
+      </div>
+
+      <p class="success-note">
+        Engineering has received your request.
+      </p>
+
+      <button id="anotherButton" class="secondary">
+        MAKE ANOTHER REQUEST
       </button>
+    </div>
 
-    </form>
+  </div>
 
-    <div id="message" class="message" aria-live="polite"></div>
-  </main>
+<script>
+  const SUPABASE_URL = "https://cnqeqehgpidrsuerjzbg.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
 
-  <script>
-    const SUPABASE_URL =
-      "https://cnqeqehgpidrsuerjzbg.supabase.co";
+  const supabaseClient =
+    supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const SUPABASE_KEY =
-      "sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
+  const formCard = document.getElementById("formCard");
+  const closedState = document.getElementById("closedState");
+  const successCard = document.getElementById("successCard");
+  const requestForm = document.getElementById("requestForm");
+  const submitButton = document.getElementById("submitButton");
+  const message = document.getElementById("message");
 
-    const supabaseClient =
-      supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  let currentShow = null;
 
-    const form = document.getElementById("requestForm");
-    const message = document.getElementById("message");
-    const submitBtn = document.getElementById("submitBtn");
+  async function loadCurrentShow() {
+    const { data, error } = await supabaseClient
+      .from("Shows")
+      .select("id, show_name, venue, start_date")
+      .eq("active", true)
+      .limit(1)
+      .maybeSingle();
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
+    if (error) {
+      console.error(error);
+      document.getElementById("showName").textContent =
+        "Unable to load current show";
+      return;
+    }
 
-      submitBtn.disabled = true;
-      submitBtn.textContent = "Submitting...";
-      message.textContent = "";
-      message.className = "message";
+    if (!data) {
+      currentShow = null;
+      document.getElementById("showName").textContent =
+        "NO ACTIVE SHOW";
+      document.getElementById("venue").textContent = "";
+      closedState.style.display = "block";
+      formCard.style.display = "none";
+      return;
+    }
 
-      const priority =
-        document.querySelector(
-          'input[name="priority"]:checked'
-        ).value;
+    currentShow = data;
 
-      const request = {
-        requester_name:
-          document.getElementById("requester_name").value.trim(),
+    document.getElementById("showName").textContent =
+      data.show_name;
 
-        location:
-          document.getElementById("location").value.trim(),
+    document.getElementById("venue").textContent =
+      data.venue || "";
 
-        request_type:
-          document.getElementById("request_type").value,
+    closedState.style.display = "none";
+    formCard.style.display = "block";
+  }
 
-        description:
-          document.getElementById("description").value.trim(),
+  requestForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
 
-        priority: priority,
-        status: "new"
-      };
+    submitButton.disabled = true;
+    submitButton.textContent = "SENDING...";
+    message.textContent = "";
 
-      const { error } = await supabaseClient
-        .from("Requests")
-        .insert([request]);
+    const name =
+      document.getElementById("name").value.trim();
 
-      if (error) {
-        console.error(error);
-        message.textContent =
-          "Request failed. Please try again.";
-        message.className = "message error";
-      } else {
-        message.textContent =
-          "Request received. Engineering has it.";
-        message.className = "message success";
+    const department =
+      document.getElementById("department").value;
 
-        form.reset();
+    const location =
+      document.getElementById("location").value.trim();
 
-        document.querySelector(
-          'input[name="priority"][value="normal"]'
-        ).checked = true;
+    const phone =
+      document.getElementById("phone").value.trim();
+
+    const requestType =
+      document.getElementById("requestType").value;
+
+    const description =
+      document.getElementById("description").value.trim();
+
+    const { data, error } = await supabaseClient.rpc(
+      "submit_truck_help_request",
+      {
+        p_requester_name: name,
+        p_department: department,
+        p_location: location,
+        p_phone: phone,
+        p_request_type: requestType,
+        p_description: description
       }
+    );
 
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Submit Request";
+    submitButton.disabled = false;
+    submitButton.textContent = "SUBMIT REQUEST";
+
+    if (error) {
+      console.error(error);
+      message.textContent =
+        "Request failed. Please try again.";
+      return;
+    }
+
+    const requestId =
+      data && data.length ? data[0].request_id : "";
+
+    document.getElementById("requestNumber").textContent =
+      requestId ? "Request #" + requestId : "";
+
+    document.getElementById("sName").textContent = name;
+    document.getElementById("sDepartment").textContent = department;
+    document.getElementById("sLocation").textContent = location;
+    document.getElementById("sType").textContent = requestType;
+    document.getElementById("sDescription").textContent = description;
+
+    formCard.style.display = "none";
+    successCard.style.display = "block";
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  document.getElementById("anotherButton")
+    .addEventListener("click", () => {
+      requestForm.reset();
+      message.textContent = "";
+      successCard.style.display = "none";
+      formCard.style.display = "block";
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
-
-// Pre-fill location from QR code
-const urlParams = new URLSearchParams(window.location.search);
-const qrLocation = urlParams.get("location");
-
-if (qrLocation) {
-  document.getElementById("location").value = qrLocation;
-}
-
-
+  loadCurrentShow();
 </script>
+
 </body>
 </html>
