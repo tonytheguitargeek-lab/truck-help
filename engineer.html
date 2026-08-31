@@ -5052,6 +5052,62 @@ async function loadClientReport(showId) {
 
   const rows = requests || [];
 
+  // Load documentation photos for client-report items.
+  const requestIds = rows.map(r => r.id);
+
+  let photosByRequest = {};
+
+  if (requestIds.length) {
+
+    const { data: reportPhotos, error: photoError } =
+      await sb
+        .from("Request_Photos")
+        .select("*")
+        .in("request_id", requestIds)
+        .order("created_at", { ascending: true });
+
+    if (photoError) {
+      console.error(
+        "Client report photo load failed:",
+        photoError
+      );
+    }
+
+    for (const photo of (reportPhotos || [])) {
+
+      const { data: signedData, error: signedError } =
+        await sb.storage
+          .from("request-photos")
+          .createSignedUrl(
+            photo.storage_path,
+            3600
+          );
+
+      if (signedError) {
+        console.error(
+          "Client report signed URL failed:",
+          signedError
+        );
+        continue;
+      }
+
+      if (!photosByRequest[photo.request_id]) {
+        photosByRequest[photo.request_id] = [];
+      }
+
+      photosByRequest[photo.request_id].push({
+        ...photo,
+        signed_url: signedData.signedUrl
+      });
+    }
+  }
+
+  rows.forEach(r => {
+    r._clientReportPhotos =
+      photosByRequest[r.id] || [];
+  });
+
+
   const damaged =
     rows.filter(
       r => r.client_report_category === "Damaged"
@@ -5133,8 +5189,25 @@ async function loadClientReport(showId) {
 
       <div class="no-print"
         style="margin:18px 0;">
-        <button class="primary"
-          onclick="window.print()">
+        
+        <label style="
+          display:flex;
+          align-items:center;
+          gap:6px;
+          font-size:13px;
+          font-weight:800;
+          margin-right:12px;
+        ">
+          <input
+            id="includeClientReportPhotos"
+            type="checkbox"
+            style="width:auto;margin:0;"
+          >
+          Include Photos
+        </label>
+
+<button class="primary"
+          onclick="printClientReport()">
           PRINT REPORT
         </button>
       </div>
@@ -5182,7 +5255,59 @@ async function loadClientReport(showId) {
   `;
 }
 
+function printClientReport() {
+
+  const box =
+    document.getElementById(
+      "includeClientReportPhotos"
+    );
+
+  const includePhotos =
+    box && box.checked;
+
+  const photoSections =
+    Array.from(
+      document.querySelectorAll(
+        ".client-report-photo-section"
+      )
+    );
+
+  if (!includePhotos) {
+
+    photoSections.forEach(section => {
+
+      section.dataset.beforePrintDisplay =
+        section.style.display || "";
+
+      section.style.display = "none";
+    });
+  }
+
+  const restore = () => {
+
+    photoSections.forEach(section => {
+
+      section.style.display =
+        section.dataset.beforePrintDisplay || "";
+
+      delete section.dataset.beforePrintDisplay;
+    });
+  };
+
+  window.addEventListener(
+    "afterprint",
+    restore,
+    { once:true }
+  );
+
+  window.print();
+}
+
+
 function clientReportItemHtml(r) {
+
+  const photos = r._clientReportPhotos || [];
+
   return `
     <div class="report-item">
 
@@ -5200,7 +5325,7 @@ function clientReportItemHtml(r) {
         </div>
 
         <div>
-          <strong>Location:</strong>
+          <strong>Incident Location:</strong>
           ${escapeHtml(r.location || "—")}
         </div>
 
@@ -5218,6 +5343,17 @@ function clientReportItemHtml(r) {
           )}
         </div>
 
+        ${
+          r.gear_location
+          ? `
+            <div>
+              <strong>Gear Location:</strong>
+              ${escapeHtml(r.gear_location)}
+            </div>
+          `
+          : ""
+        }
+
       </div>
 
       ${
@@ -5231,9 +5367,89 @@ function clientReportItemHtml(r) {
         : ""
       }
 
+      ${
+        photos.length
+        ? `
+          <div
+            class="client-report-photo-section"
+            style="
+              margin-top:14px;
+              padding-top:12px;
+              border-top:1px solid #bbb;
+            "
+          >
+
+            <div style="
+              font-weight:800;
+              margin-bottom:8px;
+            ">
+              Documentation Photos (${photos.length})
+            </div>
+
+            <div style="
+              display:grid;
+              grid-template-columns:
+                repeat(2,minmax(0,1fr));
+              gap:10px;
+            ">
+
+              ${photos.map(photo => `
+
+                <div style="
+                  break-inside:avoid;
+                  page-break-inside:avoid;
+                ">
+
+                  <img
+                    src="${photo.signed_url}"
+                    alt="Documentation photo"
+                    style="
+                      width:100%;
+                      max-height:240px;
+                      object-fit:contain;
+                      border-radius:6px;
+                    "
+                  >
+
+                  ${
+                    photo.caption
+                    ? `
+                      <div style="
+                        font-size:12px;
+                        font-weight:700;
+                        margin-top:4px;
+                      ">
+                        ${escapeHtml(photo.caption)}
+                      </div>
+                    `
+                    : ""
+                  }
+
+                  <div style="
+                    font-size:11px;
+                    opacity:.75;
+                    margin-top:3px;
+                  ">
+                    ${escapeHtml(photo.added_by || "—")}
+                    ·
+                    ${photo.created_at ? new Date(photo.created_at).toLocaleString() : "—"}
+                  </div>
+
+                </div>
+
+              `).join("")}
+
+            </div>
+
+          </div>
+        `
+        : ""
+      }
+
     </div>
   `;
 }
+
 
 function reportItemHtml(r) {
   return `
