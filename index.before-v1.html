@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engineering Help</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      color: #16202a;
+    }
+
+    .container {
+      max-width: 520px;
+      margin: 40px auto;
+      background: white;
+      padding: 28px;
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+    }
+
+    .sub {
+      margin: 0 0 24px;
+      color: #65707c;
+    }
+
+    label, fieldset {
+      display: block;
+      margin-top: 18px;
+    }
+
+    input, select, textarea, button {
+      width: 100%;
+      font-size: 16px;
+    }
+
+    input, select, textarea {
+      margin-top: 7px;
+      padding: 12px;
+      border: 1px solid #c8d0d8;
+      border-radius: 8px;
+    }
+
+    textarea {
+      resize: vertical;
+    }
+
+    fieldset {
+      border: 0;
+      padding: 0;
+      margin-left: 0;
+      margin-right: 0;
+    }
+
+    .radio {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .radio input {
+      width: auto;
+    }
+
+    button {
+      margin-top: 24px;
+      padding: 14px;
+      border: 0;
+      border-radius: 8px;
+      background: #0b3a66;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+    }
+
+    .message {
+      margin-top: 20px;
+      font-weight: bold;
+    }
+
+    .success { color: #16803a; }
+    .error { color: #b42318; }
+  </style>
+</head>
+<body>
+
+  <main class="container">
+    <h1>Engineering Help</h1>
+    <p class="sub">Submit a request to the engineering team.</p>
+
+    <form id="requestForm">
+
+      <label>
+        Your Name
+        <input id="requester_name" type="text" required>
+      </label>
+
+      <label>
+        Location
+        <input id="location" type="text"
+               placeholder="Camera 3, Tape 1, Field Audio..."
+               required>
+      </label>
+
+      <label>
+        Request Type
+        <select id="request_type" required>
+          <option value="issue">Something is not working</option>
+          <option value="gear">Need gear</option>
+        </select>
+      </label>
+
+      <label>
+        What do you need?
+        <textarea id="description" rows="4" required></textarea>
+      </label>
+
+      <fieldset>
+        <legend>Priority</legend>
+
+        <label class="radio">
+          <input type="radio"
+                 name="priority"
+                 value="normal"
+                 checked>
+          Normal
+        </label>
+
+        <label class="radio">
+          <input type="radio"
+                 name="priority"
+                 value="show-critical">
+          Show Critical
+        </label>
+      </fieldset>
+
+      <button id="submitBtn" type="submit">
+        Submit Request
+      </button>
+
+    </form>
+
+    <div id="message" class="message" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const SUPABASE_URL =
+      "https://cnqeqehgpidrsuerjzbg.supabase.co";
+
+    const SUPABASE_KEY =
+      "sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
+
+    const supabaseClient =
+      supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const form = document.getElementById("requestForm");
+    const message = document.getElementById("message");
+    const submitBtn = document.getElementById("submitBtn");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Submitting...";
+      message.textContent = "";
+      message.className = "message";
+
+      const priority =
+        document.querySelector(
+          'input[name="priority"]:checked'
+        ).value;
+
+      const request = {
+        requester_name:
+          document.getElementById("requester_name").value.trim(),
+
+        location:
+          document.getElementById("location").value.trim(),
+
+        request_type:
+          document.getElementById("request_type").value,
+
+        description:
+          document.getElementById("description").value.trim(),
+
+        priority: priority,
+        status: "new"
+      };
+
+      const { error } = await supabaseClient
+        .from("Requests")
+        .insert([request]);
+
+      if (error) {
+        console.error(error);
+        message.textContent =
+          "Request failed. Please try again.";
+        message.className = "message error";
+      } else {
+        message.textContent =
+          "Request received. Engineering has it.";
+        message.className = "message success";
+
+        form.reset();
+
+        document.querySelector(
+          'input[name="priority"][value="normal"]'
+        ).checked = true;
+      }
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit Request";
+    });
+
+
+// Pre-fill location from QR code
+const urlParams = new URLSearchParams(window.location.search);
+const qrLocation = urlParams.get("location");
+
+if (qrLocation) {
+  document.getElementById("location").value = qrLocation;
+}
+
+
+</script>
+</body>
+</html>

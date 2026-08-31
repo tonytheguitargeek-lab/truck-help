@@ -967,8 +967,6 @@ function renderActive() {
           onclick="showShows()">
           START NEW SHOW
         </button>
-
-      
       </div>
     `;
     return;
@@ -1192,98 +1190,9 @@ function setRequestFilter(filter) {
   renderActive();
 }
 
-
-async function getCurrentShowEngineers() {
-
-  if (!currentShow) {
-    await loadCurrentShow();
-  }
-
-  if (!currentShow) {
-    return [];
-  }
-
-  const { data: assignments, error: assignmentError } =
-    await sb
-      .from("Show_Engineers")
-      .select("engineer_id, sort_order")
-      .eq("show_id", currentShow.id)
-      .order("sort_order");
-
-  if (assignmentError) {
-    alert(assignmentError.message);
-    return [];
-  }
-
-  if (!assignments || !assignments.length) {
-    return [];
-  }
-
-  const ids =
-    assignments.map(a => a.engineer_id);
-
-  const { data: engineers, error: engineerError } =
-    await sb
-      .from("Engineers")
-      .select("id, name, role, active")
-      .in("id", ids);
-
-  if (engineerError) {
-    alert(engineerError.message);
-    return [];
-  }
-
-  const engineerMap =
-    new Map(
-      (engineers || []).map(e => [
-        String(e.id),
-        e
-      ])
-    );
-
-  return assignments
-    .map(a =>
-      engineerMap.get(String(a.engineer_id))
-    )
-    .filter(Boolean);
-}
-
-
-async function selectedEngineerIsOnShow() {
-
+async function claimRequest(id) {
   if (!selectedEngineer) {
     chooseEngineer();
-    return false;
-  }
-
-  const crew =
-    await getCurrentShowEngineers();
-
-  const found =
-    crew.some(
-      e =>
-        String(e.id) ===
-        String(selectedEngineer.id)
-    );
-
-  if (!found) {
-    alert(
-      selectedEngineer.name +
-      " is not assigned to this show."
-    );
-    return false;
-  }
-
-  return true;
-}
-
-
-async function claimRequest(id) {
-
-  const allowed =
-    await selectedEngineerIsOnShow();
-
-  if (!allowed) {
     return;
   }
 
@@ -1303,14 +1212,10 @@ async function claimRequest(id) {
 
   await loadRequests();
 }
-
 
 async function takeOverRequest(id) {
-
-  const allowed =
-    await selectedEngineerIsOnShow();
-
-  if (!allowed) {
+  if (!selectedEngineer) {
+    chooseEngineer();
     return;
   }
 
@@ -1330,7 +1235,6 @@ async function takeOverRequest(id) {
 
   await loadRequests();
 }
-
 
 async function setPriority(id, value) {
   const { error } = await sb
@@ -1348,84 +1252,42 @@ async function setPriority(id, value) {
   await loadRequests();
 }
 
-
-async function openHandoff(id) {
-
-  const showEngineers =
-    await getCurrentShowEngineers();
-
-  if (!showEngineers.length) {
-    alert(
-      "No engineers are assigned to this show."
-    );
-    return;
-  }
-
-  const handoffChoices =
-    showEngineers.filter(
-      e =>
-        !selectedEngineer ||
-        String(e.id) !==
-          String(selectedEngineer.id)
-    );
-
-  if (!handoffChoices.length) {
-    alert(
-      "No other engineers are assigned to this show."
-    );
+function openHandoff(id) {
+  if (!activeEngineers.length) {
+    alert("No active engineers available.");
     return;
   }
 
   modal.innerHTML = `
     <h2>Hand Off Request</h2>
-
     <p>Select the engineer taking this request.</p>
 
-    ${handoffChoices.map(e => `
+    ${activeEngineers.map(e => `
       <button
         class="engineer-choice"
         onclick="handoffRequest(${id}, ${e.id})">
-
         ${escapeHtml(e.name)}
-
-        ${
-          e.role
-            ? " — " + escapeHtml(e.role)
-            : ""
-        }
-
+        ${e.role ? " — " + escapeHtml(e.role) : ""}
       </button>
     `).join("")}
 
     <button class="secondary full"
       style="margin-top:14px;"
       onclick="closeModal()">
-
       CANCEL
-
     </button>
   `;
 
   openModal();
 }
 
-
 async function handoffRequest(requestId, engineerId) {
-
-  const showEngineers =
-    await getCurrentShowEngineers();
-
   const engineer =
-    showEngineers.find(
-      e =>
-        String(e.id) ===
-        String(engineerId)
+    activeEngineers.find(
+      e => String(e.id) === String(engineerId)
     );
 
   if (!engineer) {
-    alert(
-      "That engineer is not assigned to this show."
-    );
     return;
   }
 
@@ -1447,15 +1309,13 @@ async function handoffRequest(requestId, engineerId) {
 
   if (
     selectedEngineer &&
-    String(engineer.id) ===
-      String(selectedEngineer.id)
+    engineer.id === selectedEngineer.id
   ) {
     ding();
   }
 
   await loadRequests();
 }
-
 
 function openComplete(id) {
   modal.innerHTML = `
@@ -1506,33 +1366,6 @@ function openComplete(id) {
       </select>
     </div>
 
-    <label style="display:flex;align-items:center;gap:10px;margin-top:16px;">
-      <input
-        id="followUpCheck"
-        type="checkbox"
-        style="width:auto;"
-        onchange="toggleFollowUpFields()">
-      Create Follow-Up
-    </label>
-
-    <div id="followUpFieldsWrap" class="hidden">
-      <label>Follow-Up Category</label>
-
-      <select id="followUpCategory">
-        <option value="Repair Needed">Repair Needed</option>
-        <option value="Equipment / Replacement Needed">Equipment / Replacement Needed</option>
-        <option value="Supplies to Order">Supplies to Order</option>
-        <option value="Lost / Missing Equipment">Lost / Missing Equipment</option>
-      </select>
-
-      <label>Next Action</label>
-
-      <input
-        id="followUpNextAction"
-        type="text"
-        placeholder="Example: Ship to shop">
-    </div>
-
     <button class="primary full"
       style="margin-top:14px;"
       onclick="completeRequest(${id})">
@@ -1567,15 +1400,6 @@ function toggleClientReportCategory() {
     .classList.toggle("hidden", !checked);
 }
 
-function toggleFollowUpFields() {
-  const checked =
-    document.getElementById("followUpCheck").checked;
-
-  document
-    .getElementById("followUpFieldsWrap")
-    .classList.toggle("hidden", !checked);
-}
-
 async function completeRequest(id) {
   const notes =
     document.getElementById("resolutionNotes")
@@ -1596,43 +1420,6 @@ async function completeRequest(id) {
     clientReport
       ? document.getElementById("clientReportCategory").value
       : null;
-  const createFollowUp =
-    document.getElementById("followUpCheck").checked;
-
-  const followUpCategory =
-    createFollowUp
-      ? document.getElementById("followUpCategory").value
-      : null;
-
-  const followUpNextAction =
-    createFollowUp
-      ? document.getElementById("followUpNextAction").value.trim()
-      : null;
-
-  if (createFollowUp && !followUpNextAction) {
-
-    alert("Please enter a short Next Action.");
-
-    return;
-
-  }
-
-  const { data: requestRecord, error: requestLookupError } =
-    await sb
-      .from("Requests")
-      .select("description, show_id")
-      .eq("id", id)
-      .single();
-
-  if (requestLookupError) {
-
-    alert(requestLookupError.message);
-
-    return;
-
-  }
-
-
 
   const { error } = await sb
     .from("Requests")
@@ -1656,41 +1443,6 @@ async function completeRequest(id) {
     alert(error.message);
     return;
   }
-  if (createFollowUp) {
-
-    const { error: followUpError } = await sb
-      .from("Follow_Ups")
-      .insert({
-        request_id: id,
-        show_id: requestRecord.show_id,
-        category: followUpCategory,
-        title: requestRecord.description || "Follow-Up",
-        next_action: followUpNextAction,
-        status: "open",
-        created_by:
-          selectedEngineer
-            ? selectedEngineer.name
-            : null
-      });
-
-    if (followUpError) {
-
-      alert(
-        "Request completed, but Follow-Up could not be saved:\n\n" +
-        followUpError.message
-      );
-
-      closeModal();
-
-      await loadRequests();
-
-      return;
-
-    }
-
-  }
-
-
 
   closeModal();
   await loadRequests();
@@ -1716,16 +1468,6 @@ function showMenu() {
       </button>
 
       <button class="menu-card"
-
-        onclick="showFollowUps()">
-
-        <strong>Follow-Ups</strong>
-
-        <span>Repairs, equipment, supplies and missing gear</span>
-
-      </button>
-
-      <button class="menu-card"
         onclick="showReports()">
         <strong>Reports</strong>
         <span>End-of-show turnover report</span>
@@ -1735,15 +1477,6 @@ function showMenu() {
         onclick="showShows()">
         <strong>Shows</strong>
         <span>Start or close the current show</span>
-      </button>
-
-      <button class="menu-card"
-        onclick="showPastShows()">
-
-        <strong>Past Shows</strong>
-
-        <span>Browse archived productions</span>
-
       </button>
 
       <button class="menu-card"
@@ -1769,565 +1502,6 @@ function showMenu() {
         <strong>Logout</strong>
         <span>Sign this browser out</span>
       </button>
-
-    </div>
-  `;
-}
-
-
-async function showPastShows() {
-
-  hideViews();
-
-  menuView.classList.remove("hidden");
-
-  menuView.innerHTML = `
-    <div class="panel">
-
-      <div class="section-header">
-
-        <div>
-          <h2 style="margin:0;">Past Shows</h2>
-          <div style="color:#64748b;">
-            Archived productions
-          </div>
-        </div>
-
-        <button class="small-btn"
-          onclick="showMenu()">
-          BACK
-        </button>
-
-      </div>
-
-      <div style="margin-top:18px;">
-
-        <label for="pastShowSearch">
-          Search Past Shows
-        </label>
-
-        <input
-          id="pastShowSearch"
-          type="text"
-          placeholder="Show, number, year, venue, MU, client..."
-          oninput="filterPastShows()"
-          style="margin-top:6px;"
-        >
-
-      </div>
-
-      <div id="pastShowsContent">
-        Loading...
-      </div>
-
-    </div>
-  `;
-
-  const { data: shows, error } =
-    await sb
-      .from("Shows")
-      .select("*")
-      .eq("active", false)
-      .order("start_date", { ascending: false })
-      .order("id", { ascending: false });
-
-  if (error) {
-    console.error(error);
-    alert(error.message);
-    return;
-  }
-
-  const content =
-    document.getElementById("pastShowsContent");
-
-  if (!shows || !shows.length) {
-
-    content.innerHTML = `
-      <div class="empty">
-        No past shows yet.
-      </div>
-    `;
-
-    return;
-  }
-
-  content.innerHTML =
-    shows.map(show => {
-
-      const year =
-        show.start_date
-          ? new Date(
-              show.start_date + "T12:00:00"
-            ).getFullYear()
-          : "—";
-
-      return `
-        <div class="completed-card past-show-card"
-          onclick="openPastShow(${show.id})"
-
-          data-search="${escapeHtml(
-            [
-              show.show_name,
-              show.show_number,
-              year,
-              show.venue,
-              show.main_unit,
-              show.b_unit,
-              show.client_network
-            ]
-              .filter(Boolean)
-              .join(" ")
-              .toLowerCase()
-          )}"
-          style="
-            margin-top:12px;
-            cursor:pointer;
-          ">
-
-          <div style="
-            display:flex;
-            justify-content:space-between;
-            gap:12px;
-            align-items:flex-start;
-          ">
-
-            <div>
-
-              <div style="
-                font-size:18px;
-                font-weight:900;
-              ">
-                ${escapeHtml(
-                  show.show_name || "Untitled Show"
-                )}
-              </div>
-
-              <div style="
-                color:#64748b;
-                margin-top:3px;
-              ">
-                ${escapeHtml(String(year))}
-              </div>
-
-            </div>
-
-            ${
-              show.show_number
-                ? `
-                  <span class="badge">
-                    ${escapeHtml(show.show_number)}
-                  </span>
-                `
-                : ""
-            }
-
-          </div>
-
-          <div style="
-            margin-top:10px;
-            line-height:1.6;
-          ">
-
-            ${
-              show.venue
-                ? `
-                  <div>
-                    <strong>Venue:</strong>
-                    ${escapeHtml(show.venue)}
-                  </div>
-                `
-                : ""
-            }
-
-            ${
-              show.main_unit
-                ? `
-                  <div>
-                    <strong>MU:</strong>
-                    ${escapeHtml(show.main_unit)}
-                  </div>
-                `
-                : ""
-            }
-
-            ${
-              show.client_network
-                ? `
-                  <div>
-                    <strong>Client / Network:</strong>
-                    ${escapeHtml(show.client_network)}
-                  </div>
-                `
-                : ""
-            }
-
-          </div>
-
-        </div>
-      `;
-    }).join("");
-}
-
-
-
-function filterPastShows() {
-
-  const input =
-    document.getElementById("pastShowSearch");
-
-  if (!input) return;
-
-  const term =
-    input.value
-      .trim()
-      .toLowerCase();
-
-  const cards =
-    document.querySelectorAll(".past-show-card");
-
-  let visible = 0;
-
-  cards.forEach(card => {
-
-    const search =
-      (card.dataset.search || "")
-        .toLowerCase();
-
-    const match =
-      !term || search.includes(term);
-
-    card.style.display =
-      match ? "" : "none";
-
-    if (match) visible++;
-  });
-
-  let message =
-    document.getElementById("pastShowNoResults");
-
-  if (!message) {
-
-    message =
-      document.createElement("div");
-
-    message.id =
-      "pastShowNoResults";
-
-    message.className =
-      "empty";
-
-    message.style.marginTop =
-      "14px";
-
-    const content =
-      document.getElementById("pastShowsContent");
-
-    if (content) {
-      content.appendChild(message);
-    }
-  }
-
-  if (term && visible === 0) {
-
-    message.textContent =
-      "No past shows match your search.";
-
-    message.style.display =
-      "block";
-
-  } else {
-
-    message.style.display =
-      "none";
-  }
-}
-
-
-async function openPastShow(showId) {
-
-  hideViews();
-  menuView.classList.remove("hidden");
-
-  menuView.innerHTML = `
-    <div class="panel">
-      Loading archived show...
-    </div>
-  `;
-
-  const { data: show, error: showError } =
-    await sb
-      .from("Shows")
-      .select("*")
-      .eq("id", showId)
-      .single();
-
-  if (showError) {
-    console.error(showError);
-    alert(showError.message);
-    return;
-  }
-
-  const { data: assignments } =
-    await sb
-      .from("Show_Engineers")
-      .select("engineer_id, sort_order")
-      .eq("show_id", showId)
-      .order("sort_order", { ascending: true });
-
-  let crew = [];
-
-  if (assignments && assignments.length) {
-
-    const ids =
-      assignments.map(a => a.engineer_id);
-
-    const { data: engineers } =
-      await sb
-        .from("Engineers")
-        .select("id, name, role")
-        .in("id", ids);
-
-    const engineerMap =
-      new Map(
-        (engineers || []).map(e => [e.id, e])
-      );
-
-    crew =
-      assignments
-        .map(a => engineerMap.get(a.engineer_id))
-        .filter(Boolean);
-  }
-
-  const { data: requests } =
-    await sb
-      .from("Requests")
-      .select("*")
-      .eq("show_id", showId)
-      .order("created_at", { ascending: true });
-
-  const { data: followUps } =
-    await sb
-      .from("Follow_Ups")
-      .select("*")
-      .eq("show_id", showId)
-      .order("created_at", { ascending: true });
-
-  const completed =
-    (requests || []).filter(
-      r => r.status === "complete"
-    );
-
-  const startDate =
-    show.start_date
-      ? new Date(
-          show.start_date + "T12:00:00"
-        ).toLocaleDateString()
-      : "";
-
-  menuView.innerHTML = `
-    <div class="panel">
-
-      <div class="section-header">
-
-        <div>
-          <h2 style="margin:0;">
-            ${escapeHtml(show.show_name || "Untitled Show")}
-          </h2>
-
-          <div style="color:#64748b;margin-top:4px;">
-            Archived Show
-          </div>
-        </div>
-
-        <button class="small-btn"
-          onclick="showPastShows()">
-          BACK
-        </button>
-
-      </div>
-
-      <div style="
-        margin-top:14px;
-        padding:14px;
-        border:1px solid #cbd5e1;
-        border-radius:10px;
-        background:#f8fafc;
-        line-height:1.7;
-      ">
-
-        ${
-          show.show_number
-            ? `<div><strong>Show Number:</strong>
-                ${escapeHtml(show.show_number)}</div>`
-            : ""
-        }
-
-        ${
-          show.client_network
-            ? `<div><strong>Client / Network:</strong>
-                ${escapeHtml(show.client_network)}</div>`
-            : ""
-        }
-
-        ${
-          show.venue
-            ? `<div><strong>Venue:</strong>
-                ${escapeHtml(show.venue)}</div>`
-            : ""
-        }
-
-        ${
-          show.main_unit
-            ? `<div><strong>MU / Main Unit:</strong>
-                ${escapeHtml(show.main_unit)}</div>`
-            : ""
-        }
-
-        ${
-          show.b_unit
-            ? `<div><strong>B Unit:</strong>
-                ${escapeHtml(show.b_unit)}</div>`
-            : ""
-        }
-
-        ${
-          startDate
-            ? `<div><strong>Start Date:</strong>
-                ${escapeHtml(startDate)}</div>`
-            : ""
-        }
-
-      </div>
-
-      <div style="
-        display:flex;
-        gap:10px;
-        flex-wrap:wrap;
-        margin-top:18px;
-      ">
-
-        <button class="primary"
-          onclick="showReports(${show.id}, 'end')">
-          END-OF-SHOW REPORT
-        </button>
-
-        <button class="small-btn"
-          onclick="showReports(${show.id}, 'client')">
-          CLIENT DAMAGE / MISSING REPORT
-        </button>
-
-      </div>
-
-
-
-      <h3 style="margin-top:22px;">
-        Engineering Crew
-      </h3>
-
-      ${
-        crew.length
-          ? crew.map(e => `
-              <div class="completed-card"
-                style="margin-top:8px;">
-                <strong>${escapeHtml(e.name)}</strong>
-                ${
-                  e.role
-                    ? ` — ${escapeHtml(e.role)}`
-                    : ""
-                }
-              </div>
-            `).join("")
-          : `
-            <div class="empty">
-              No engineering crew recorded.
-            </div>
-          `
-      }
-
-      <h3 style="margin-top:22px;">
-        Completed Requests (${completed.length})
-      </h3>
-
-      ${
-        completed.length
-          ? completed
-              .slice()
-              .sort((a,b) =>
-                new Date(b.completed_at || b.created_at) -
-                new Date(a.completed_at || a.created_at)
-              )
-              .map(completedCardHtml)
-              .join("")
-          : `
-            <div class="empty">
-              No completed requests for this show.
-            </div>
-          `
-      }
-
-      <h3 style="margin-top:22px;">
-        Follow-Ups (${(followUps || []).length})
-      </h3>
-
-      ${
-        followUps && followUps.length
-          ? followUps.map(f => `
-              <div class="completed-card"
-                style="margin-top:10px;">
-
-                <div style="
-                  display:flex;
-                  justify-content:space-between;
-                  gap:12px;
-                ">
-
-                  <strong>
-                    ${escapeHtml(f.title || "")}
-                  </strong>
-
-                  <span class="badge">
-                    ${escapeHtml(f.status || "open")}
-                  </span>
-
-                </div>
-
-                <div style="
-                  color:#64748b;
-                  margin-top:4px;
-                ">
-                  ${escapeHtml(f.category || "")}
-                </div>
-
-                ${
-                  f.next_action
-                    ? `
-                      <div style="margin-top:8px;">
-                        <strong>Next Action:</strong>
-                        ${escapeHtml(f.next_action)}
-                      </div>
-                    `
-                    : ""
-                }
-
-                ${
-                  f.resolution
-                    ? `
-                      <div style="margin-top:8px;">
-                        <strong>Resolution:</strong>
-                        ${escapeHtml(f.resolution)}
-                      </div>
-                    `
-                    : ""
-                }
-
-              </div>
-            `).join("")
-          : `
-            <div class="empty">
-              No follow-ups for this show.
-            </div>
-          `
-      }
 
     </div>
   `;
@@ -2447,534 +1621,7 @@ function completedCardHtml(r) {
 }
 
 
-
-
-
-function openAddFollowUp() {
-
-  const hasCurrentShow =
-    currentShow && currentShow.id;
-
-  modal.innerHTML = `
-    <h2>Add Follow-Up</h2>
-
-    <label>Category</label>
-    <select id="manualFollowUpCategory">
-      <option value="Repair Needed">
-        Repair Needed
-      </option>
-      <option value="Equipment / Replacement Needed">
-        Equipment / Replacement Needed
-      </option>
-      <option value="Supplies to Order">
-        Supplies to Order
-      </option>
-      <option value="Lost / Missing Equipment">
-        Lost / Missing Equipment
-      </option>
-    </select>
-
-    <label style="margin-top:12px;">
-      What needs attention?
-    </label>
-    <input
-      id="manualFollowUpTitle"
-      type="text"
-      placeholder="Example: Camera 3 headset cable"
-    >
-
-    <label style="margin-top:12px;">
-      Next Action
-    </label>
-    <input
-      id="manualFollowUpNextAction"
-      type="text"
-      placeholder="Example: Order replacement"
-    >
-
-    <label style="margin-top:12px;">
-      Show
-    </label>
-
-    <select id="manualFollowUpShow">
-      ${
-        hasCurrentShow
-          ? `
-            <option value="${currentShow.id}" selected>
-              ${escapeHtml(currentShow.show_name)}
-              ${
-                currentShow.venue
-                  ? " — " + escapeHtml(currentShow.venue)
-                  : ""
-              }
-            </option>
-          `
-          : ""
-      }
-
-      <option value="">
-        GENERAL / NO SHOW
-      </option>
-    </select>
-
-    <button
-      class="primary full"
-      style="margin-top:16px;"
-      onclick="saveManualFollowUp()">
-      ADD FOLLOW-UP
-    </button>
-
-    <button
-      class="secondary full"
-      style="margin-top:8px;"
-      onclick="closeModal()">
-      CANCEL
-    </button>
-  `;
-
-  openModal();
-}
-
-
-async function saveManualFollowUp() {
-
-  const category =
-    document
-      .getElementById("manualFollowUpCategory")
-      .value;
-
-  const title =
-    document
-      .getElementById("manualFollowUpTitle")
-      .value
-      .trim();
-
-  const nextAction =
-    document
-      .getElementById("manualFollowUpNextAction")
-      .value
-      .trim();
-
-  const showValue =
-    document
-      .getElementById("manualFollowUpShow")
-      .value;
-
-  if (!title) {
-    alert("Please enter what needs attention.");
-    return;
-  }
-
-  if (!nextAction) {
-    alert("Please enter a short Next Action.");
-    return;
-  }
-
-  const showId =
-    showValue
-      ? Number(showValue)
-      : null;
-
-
-  // ---------------------------------------------
-  // CHECK FOR POSSIBLE DUPLICATE OPEN FOLLOW-UP
-  // ---------------------------------------------
-
-  let duplicateQuery = sb
-    .from("Follow_Ups")
-    .select("id, title, next_action")
-    .eq("status", "open");
-
-  if (showId === null) {
-    duplicateQuery =
-      duplicateQuery.is("show_id", null);
-  } else {
-    duplicateQuery =
-      duplicateQuery.eq("show_id", showId);
-  }
-
-  const {
-    data: existingFollowUps,
-    error: duplicateError
-  } = await duplicateQuery;
-
-  if (duplicateError) {
-    alert(duplicateError.message);
-    return;
-  }
-
-
-  const normalize = value =>
-    (value || "")
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-
-  const newWords =
-    normalize(title)
-      .split(" ")
-      .filter(word => word.length > 2);
-
-
-  const possibleDuplicate =
-    (existingFollowUps || []).find(item => {
-
-      const existingTitle =
-        normalize(item.title);
-
-      if (!existingTitle) {
-        return false;
-      }
-
-      const existingWords =
-        existingTitle
-          .split(" ")
-          .filter(word => word.length > 2);
-
-      if (
-        normalize(title) === existingTitle
-      ) {
-        return true;
-      }
-
-      const matchingWords =
-        newWords.filter(word =>
-          existingWords.includes(word)
-        );
-
-      const smallestWordCount =
-        Math.min(
-          newWords.length,
-          existingWords.length
-        );
-
-      return (
-        smallestWordCount >= 2 &&
-        matchingWords.length >=
-          Math.ceil(smallestWordCount * 0.6)
-      );
-    });
-
-
-  if (possibleDuplicate) {
-
-    const addAnyway = confirm(
-      "Possible existing Follow-Up found:\n\n" +
-      possibleDuplicate.title +
-      "\n\nNext Action: " +
-      (possibleDuplicate.next_action || "—") +
-      "\n\nAdd this new Follow-Up anyway?"
-    );
-
-    if (!addAnyway) {
-      return;
-    }
-  }
-
-
-  // ---------------------------------------------
-  // SAVE FOLLOW-UP
-  // ---------------------------------------------
-
-  const { error } = await sb
-    .from("Follow_Ups")
-    .insert({
-      request_id: null,
-      show_id: showId,
-      category,
-      title,
-      next_action: nextAction,
-      status: "open",
-      created_by:
-        selectedEngineer
-          ? selectedEngineer.name
-          : null
-    });
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  closeModal();
-
-  followUpViewStatus = "open";
-
-  await showFollowUps();
-}
-
-
-let followUpViewStatus = "open";
-
-function setFollowUpViewStatus(status) {
-
-  followUpViewStatus = status;
-
-  showFollowUps();
-
-}
-
-async function resolveFollowUp(id) {
-
-  const resolution = prompt(
-    "Resolution:"
-  );
-
-  if (resolution === null) {
-    return;
-  }
-
-  const cleanResolution = resolution.trim();
-
-  if (!cleanResolution) {
-    alert("Please enter a short resolution.");
-    return;
-  }
-
-  const { error } = await sb
-    .from("Follow_Ups")
-    .update({
-      status: "resolved",
-      resolved_at: new Date().toISOString(),
-      resolved_by:
-        selectedEngineer
-          ? selectedEngineer.name
-          : null,
-      resolution: cleanResolution
-    })
-    .eq("id", id);
-
-  if (error) {
-    alert(error.message);
-    return;
-  }
-
-  await showFollowUps();
-}
-
-async function showFollowUps() {
-
-  hideViews();
-
-  menuView.classList.remove("hidden");
-
-  menuView.innerHTML = `
-    <div class="panel">
-
-      <div class="section-header">
-        <div>
-          <h2>Follow-Ups</h2>
-          <div class="muted">
-            Open items across all shows
-          </div>
-        </div>
-
-        <button class="secondary"
-          onclick="showMenu()">
-          BACK
-        </button>
-      </div>
-
-      <div style="display:flex;gap:8px;margin:18px 0 8px 0;">
-
-        <button
-          class="${followUpViewStatus === "open" ? "primary" : "secondary"}"
-          onclick="setFollowUpViewStatus('open')">
-          OPEN
-        </button>
-
-        <button
-          class="${followUpViewStatus === "resolved" ? "primary" : "secondary"}"
-          onclick="setFollowUpViewStatus('resolved')">
-          RESOLVED
-        </button>
-
-      </div>
-
-      <button
-        class="primary"
-        style="margin:10px 0 4px 0;"
-        onclick="openAddFollowUp()">
-        ADD FOLLOW-UP
-      </button>
-
-      <div id="followUpsContent">
-        Loading...
-      </div>
-
-    </div>
-  `;
-
-  const { data: followUps, error } = await sb
-    .from("Follow_Ups")
-    .select("*")
-    .eq("status", followUpViewStatus)
-    .order(
-      followUpViewStatus === "resolved"
-        ? "resolved_at"
-        : "created_at",
-      { ascending: false }
-    );
-
-  if (error) {
-
-    document.getElementById("followUpsContent").innerHTML =
-      `<div class="empty-state">
-        ${escapeHtml(error.message)}
-      </div>`;
-
-    return;
-  }
-
-  const rows = followUps || [];
-
-  if (!rows.length) {
-
-    document.getElementById("followUpsContent").innerHTML = `
-      <div class="empty-state">
-        ${
-          followUpViewStatus === "open"
-            ? "No open follow-ups."
-            : "No resolved follow-ups."
-        }
-      </div>
-    `;
-
-    return;
-  }
-
-  const showIds =
-    [...new Set(
-      rows
-        .map(r => r.show_id)
-        .filter(Boolean)
-    )];
-
-  let showMap = {};
-
-  if (showIds.length) {
-
-    const { data: shows } = await sb
-      .from("Shows")
-      .select("id, show_name, venue")
-      .in("id", showIds);
-
-    (shows || []).forEach(show => {
-      showMap[show.id] = show;
-    });
-
-  }
-
-  const categories = [
-    "Repair Needed",
-    "Equipment / Replacement Needed",
-    "Supplies to Order",
-    "Lost / Missing Equipment"
-  ];
-
-  document.getElementById("followUpsContent").innerHTML =
-    categories.map(category => {
-
-      const items =
-        rows.filter(r => r.category === category);
-
-      if (!items.length) {
-        return "";
-      }
-
-      return `
-        <div style="margin-top:22px;">
-
-          <h3 style="margin-bottom:10px;">
-            ${escapeHtml(category)}
-            <span class="muted">
-              (${items.length})
-            </span>
-          </h3>
-
-          ${items.map(r => {
-
-            const show = r.show_id
-              ? showMap[r.show_id]
-              : null;
-
-            const showText = show
-              ? show.show_name +
-                (show.venue ? " — " + show.venue : "")
-              : "GENERAL / NO SHOW";
-
-            return `
-              <div class="request-card"
-                style="margin-bottom:10px;">
-
-                <strong>
-                  ${escapeHtml(r.title || "Follow-Up")}
-                </strong>
-
-                <div style="margin-top:8px;">
-                  <strong>Next Action:</strong>
-                  ${escapeHtml(r.next_action || "—")}
-                </div>
-
-                <div class="muted"
-                  style="margin-top:8px;">
-                  ${escapeHtml(showText)}
-                </div>
-
-                <div class="muted"
-                  style="margin-top:4px;">
-                  Added by:
-                  ${escapeHtml(r.created_by || "—")}
-                </div>
-
-                ${
-                  followUpViewStatus === "resolved"
-                    ? `
-                      <div style="margin-top:10px;">
-                        <strong>Resolution:</strong>
-                        ${escapeHtml(r.resolution || "—")}
-                      </div>
-
-                      <div class="muted"
-                        style="margin-top:4px;">
-                        Resolved by:
-                        ${escapeHtml(r.resolved_by || "—")}
-                      </div>
-
-                      <div class="muted"
-                        style="margin-top:4px;">
-                        Resolved:
-                        ${
-                          r.resolved_at
-                            ? new Date(r.resolved_at).toLocaleString()
-                            : "—"
-                        }
-                      </div>
-                    `
-                    : `
-                      <button class="primary"
-                        style="margin-top:12px;"
-                        onclick="resolveFollowUp(${r.id})">
-                        RESOLVE
-                      </button>
-                    `
-                }
-
-              </div>
-            `;
-
-          }).join("")}
-
-        </div>
-      `;
-
-    }).join("");
-
-}
-
-async function showReports(selectedShowId = null, selectedType = 'end') {
+async function showReports() {
   hideViews();
   reportsView.classList.remove("hidden");
 
@@ -3059,44 +1706,7 @@ async function showReports(selectedShowId = null, selectedType = 'end') {
   `;
 
   if (rows.length) {
-    const showId =
-      selectedShowId &&
-      rows.some(s => String(s.id) === String(selectedShowId))
-        ? selectedShowId
-        : rows[0].id;
-
-    const select =
-      document.getElementById("reportShowSelect");
-
-    if (select) {
-      select.value = String(showId);
-    }
-
-    reportType =
-      selectedType === "client"
-        ? "client"
-        : "end";
-
-    const endTab =
-      document.getElementById("endReportTab");
-
-    const clientTab =
-      document.getElementById("clientReportTab");
-
-    if (endTab && clientTab) {
-
-      endTab.classList.toggle(
-        "active",
-        reportType === "end"
-      );
-
-      clientTab.classList.toggle(
-        "active",
-        reportType === "client"
-      );
-    }
-
-    await loadSelectedReport(showId);
+    await loadSelectedReport(rows[0].id);
   }
 }
 
@@ -3753,245 +2363,7 @@ async function selectEngineer(id) {
   await showActive();
 }
 
-
-async function openEditShow() {
-
-  const { data: engineers, error: engineerError } =
-    await sb
-      .from("Engineers")
-      .select("id, name, role, active")
-      .eq("active", true)
-      .order("id");
-
-  if (engineerError) {
-    alert(engineerError.message);
-    return;
-  }
-
-  const { data: assignments, error: assignmentError } =
-    await sb
-      .from("Show_Engineers")
-      .select("engineer_id, sort_order")
-      .eq("show_id", currentShow.id)
-      .order("sort_order");
-
-  if (assignmentError) {
-    alert(assignmentError.message);
-    return;
-  }
-
-  const assignedIds =
-    new Set(
-      (assignments || [])
-        .map(a => Number(a.engineer_id))
-    );
-
-  modal.innerHTML = `
-    <h2>Edit Show</h2>
-
-    <label>Show Name</label>
-    <input id="editShowName"
-      value="${escapeHtml(currentShow.show_name || "")}">
-
-    <label>Show Number</label>
-    <input id="editShowNumber"
-      value="${escapeHtml(currentShow.show_number || "")}">
-
-    <label>Client / Network</label>
-    <input id="editClientNetwork"
-      value="${escapeHtml(currentShow.client_network || "")}">
-
-    <label>Venue / Location</label>
-    <input id="editVenue"
-      value="${escapeHtml(currentShow.venue || "")}">
-
-    <label>Start Date</label>
-    <input id="editStartDate"
-      type="date"
-      value="${escapeHtml(currentShow.start_date || "")}">
-
-    <label>MU / Main Unit</label>
-    <input id="editMainUnit"
-      value="${escapeHtml(currentShow.main_unit || "")}">
-
-    <label>B Unit</label>
-    <input id="editBUnit"
-      value="${escapeHtml(currentShow.b_unit || "")}">
-
-    <div style="margin-top:18px;">
-      <strong>Engineering Crew</strong>
-    </div>
-
-    <div id="editShowCrew"
-      style="margin-top:8px;">
-
-      ${(engineers || []).map(engineer => `
-        <label
-          style="
-            display:flex;
-            align-items:center;
-            gap:10px;
-            margin:8px 0;
-          ">
-
-          <input
-            type="checkbox"
-            class="show-engineer-checkbox"
-            value="${engineer.id}"
-            ${assignedIds.has(Number(engineer.id)) ? "checked" : ""}
-          >
-
-          <span>
-            <strong>
-              ${escapeHtml(engineer.name)}
-            </strong>
-            — ${escapeHtml(engineer.role || "")}
-          </span>
-
-        </label>
-      `).join("")}
-
-    </div>
-
-    <button
-      class="primary full"
-      style="margin-top:16px;"
-      onclick="saveEditShow()">
-      SAVE SHOW
-    </button>
-
-    <button
-      class="secondary full"
-      style="margin-top:8px;"
-      onclick="closeModal()">
-      CANCEL
-    </button>
-  `;
-
-  openModal();
-}
-
-
-async function saveEditShow() {
-
-  const showName =
-    document.getElementById("editShowName")
-      .value.trim();
-
-  const showNumber =
-    document.getElementById("editShowNumber")
-      .value.trim();
-
-  const clientNetwork =
-    document.getElementById("editClientNetwork")
-      .value.trim();
-
-  const venue =
-    document.getElementById("editVenue")
-      .value.trim();
-
-  const startDate =
-    document.getElementById("editStartDate")
-      .value;
-
-  const mainUnit =
-    document.getElementById("editMainUnit")
-      .value.trim();
-
-  const bUnit =
-    document.getElementById("editBUnit")
-      .value.trim();
-
-  if (!showName) {
-    alert("Enter a show name.");
-    return;
-  }
-
-  if (!mainUnit) {
-    alert("Enter the MU / Main Unit.");
-    return;
-  }
-
-  const selectedCrew =
-    Array.from(
-      document.querySelectorAll(
-        ".show-engineer-checkbox:checked"
-      )
-    )
-    .map(el => Number(el.value));
-
-  const { error: showError } =
-    await sb
-      .from("Shows")
-      .update({
-        show_name: showName,
-        show_number: showNumber || null,
-        client_network: clientNetwork || null,
-        venue,
-        start_date: startDate || null,
-        main_unit: mainUnit,
-        b_unit: bUnit || null
-      })
-      .eq("id", currentShow.id);
-
-  if (showError) {
-    alert(showError.message);
-    return;
-  }
-
-  const { error: deleteError } =
-    await sb
-      .from("Show_Engineers")
-      .delete()
-      .eq("show_id", currentShow.id);
-
-  if (deleteError) {
-    alert(deleteError.message);
-    return;
-  }
-
-  if (selectedCrew.length) {
-
-    const rows =
-      selectedCrew.map((engineerId, index) => ({
-        show_id: currentShow.id,
-        engineer_id: engineerId,
-        sort_order: index
-      }));
-
-    const { error: insertError } =
-      await sb
-        .from("Show_Engineers")
-        .insert(rows);
-
-    if (insertError) {
-      alert(insertError.message);
-      return;
-    }
-  }
-
-  closeModal();
-
-  await loadCurrentShow();
-
-  await showShows();
-}
-
-
 async function showShows() {
-
-  const { data: startShowEngineers, error: startShowEngineerError } =
-    await sb
-      .from("Engineers")
-      .select("id, name, role, active")
-      .eq("active", true)
-      .order("id");
-
-  if (startShowEngineerError) {
-    alert(startShowEngineerError.message);
-    return;
-  }
-
   hideViews();
   showsView.classList.remove("hidden");
 
@@ -4021,19 +2393,11 @@ async function showShows() {
           ${escapeHtml(currentShow.start_date || "")}
         </div>
 
-        <div style="display:flex;gap:10px;margin-top:20px;">
-
-          <button class="primary"
-            onclick="openEditShow()">
-            EDIT SHOW
-          </button>
-
-          <button class="danger"
-            onclick="confirmCloseShow()">
-            CLOSE SHOW
-          </button>
-
-        </div>
+        <button class="danger"
+          style="margin-top:20px;"
+          onclick="confirmCloseShow()">
+          CLOSE SHOW
+        </button>
       </div>
     `;
     return;
@@ -4052,100 +2416,16 @@ async function showShows() {
       </div>
 
       <label>Show Name</label>
-
       <input id="showNameInput"
         placeholder="ACC Huddle — Clemson">
 
-      <label>Show Number</label>
-
-      <input id="showNumberInput"
-        placeholder="Optional">
-
-      <label>Client / Network</label>
-
-      <input id="clientNetworkInput"
-        placeholder="Example: ESPN">
-
       <label>Venue / Location</label>
-
       <input id="venueInput"
         placeholder="Memorial Stadium">
 
       <label>Start Date</label>
-
       <input id="startDateInput"
         type="date">
-
-      <label>MU / Main Unit</label>
-
-      <input id="mainUnitInput"
-        placeholder="Example: MU21">
-
-      <label>B Unit</label>
-
-      <input id="bUnitInput"
-        placeholder="Optional">
-
-      <div style="margin-top:18px;">
-        <strong>Engineering Crew</strong>
-      </div>
-
-      <div id="startShowCrew"
-        style="margin-top:8px;">
-
-        ${(startShowEngineers || []).map(engineer => `
-          <label
-            style="
-              display:flex;
-              align-items:center;
-              gap:12px;
-              padding:10px 12px;
-              margin:8px 0;
-              border:1px solid #cbd5e1;
-              border-radius:8px;
-              background:#f8fafc;
-              cursor:pointer;
-            ">
-
-            <input
-              type="checkbox"
-              class="start-show-engineer-checkbox"
-              value="${engineer.id}"
-              style="
-                width:18px;
-                height:18px;
-                margin:0;
-                flex:0 0 auto;
-              "
-            >
-
-            <div
-              style="
-                display:flex;
-                align-items:center;
-                gap:8px;
-                min-width:0;
-              ">
-
-              <strong>
-                ${escapeHtml(engineer.name)}
-              </strong>
-
-              <span
-                style="
-                  color:#64748b;
-                  font-size:14px;
-                  font-weight:700;
-                ">
-                ${escapeHtml(engineer.role || "")}
-              </span>
-
-            </div>
-
-          </label>
-        `).join("")}
-
-      </div>
 
       <button class="primary"
         style="margin-top:16px;"
@@ -4161,17 +2441,8 @@ async function showShows() {
 }
 
 async function startShow() {
-
   const showName =
     document.getElementById("showNameInput")
-      .value.trim();
-
-  const showNumber =
-    document.getElementById("showNumberInput")
-      .value.trim();
-
-  const clientNetwork =
-    document.getElementById("clientNetworkInput")
       .value.trim();
 
   const venue =
@@ -4182,78 +2453,27 @@ async function startShow() {
     document.getElementById("startDateInput")
       .value;
 
-  const mainUnit =
-    document.getElementById("mainUnitInput")
-      .value.trim();
-
-  const bUnit =
-    document.getElementById("bUnitInput")
-      .value.trim();
-
   if (!showName) {
     alert("Enter a show name.");
     return;
   }
 
-  if (!mainUnit) {
-    alert("Enter the MU / Main Unit.");
-    return;
-  }
-
-  const selectedCrew =
-    Array.from(
-      document.querySelectorAll(
-        ".start-show-engineer-checkbox:checked"
-      )
-    )
-    .map(el => Number(el.value));
-
-  const { data: newShow, error } =
-    await sb
-      .from("Shows")
-      .insert({
-        show_name: showName,
-        show_number: showNumber || null,
-        client_network: clientNetwork || null,
-        venue,
-        start_date: startDate || null,
-        main_unit: mainUnit,
-        b_unit: bUnit || null,
-        active: true,
-        started_by:
-          selectedEngineer
-            ? selectedEngineer.name
-            : null
-      })
-      .select()
-      .single();
+  const { error } = await sb
+    .from("Shows")
+    .insert({
+      show_name: showName,
+      venue,
+      start_date: startDate || null,
+      active: true,
+      started_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
 
   if (error) {
     alert(error.message);
     return;
-  }
-
-  if (selectedCrew.length) {
-
-    const crewRows =
-      selectedCrew.map((engineerId, index) => ({
-        show_id: newShow.id,
-        engineer_id: engineerId,
-        sort_order: index
-      }));
-
-    const { error: crewError } =
-      await sb
-        .from("Show_Engineers")
-        .insert(crewRows);
-
-    if (crewError) {
-      alert(
-        "Show started, but crew assignments could not be saved:\n\n" +
-        crewError.message
-      );
-      return;
-    }
   }
 
   initialRequestLoad = true;
@@ -4262,50 +2482,15 @@ async function startShow() {
   await showActive();
 }
 
-
 async function confirmCloseShow() {
-
   await loadRequests();
 
-  const requestCount =
-    activeRequests.length;
+  const count = activeRequests.length;
 
-  const { data: followUps, error: followUpError } =
-    await sb
-      .from("Follow_Ups")
-      .select("id")
-      .eq("show_id", currentShow.id)
-      .eq("status", "open");
-
-  if (followUpError) {
-    alert(followUpError.message);
-    return;
-  }
-
-  const followUpCount =
-    followUps ? followUps.length : 0;
-
-  let text =
-    `Close ${currentShow.show_name}?`;
-
-  if (requestCount || followUpCount) {
-
-    text += "\n\n";
-
-    if (requestCount) {
-      text +=
-        `${requestCount} request(s) are still active.`;
-    }
-
-    if (requestCount && followUpCount) {
-      text += "\n";
-    }
-
-    if (followUpCount) {
-      text +=
-        `${followUpCount} follow-up(s) are still open.`;
-    }
-  }
+  const text =
+    count
+    ? `Close ${currentShow.show_name}?\n\n${count} request(s) are still active.`
+    : `Close ${currentShow.show_name}?`;
 
   if (!confirm(text)) {
     return;
@@ -4313,7 +2498,6 @@ async function confirmCloseShow() {
 
   await closeShow();
 }
-
 
 async function closeShow() {
   if (!currentShow) {
