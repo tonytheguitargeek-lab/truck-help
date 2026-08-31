@@ -1366,6 +1366,33 @@ function openComplete(id) {
       </select>
     </div>
 
+    <label style="display:flex;align-items:center;gap:10px;margin-top:16px;">
+      <input
+        id="followUpCheck"
+        type="checkbox"
+        style="width:auto;"
+        onchange="toggleFollowUpFields()">
+      Create Follow-Up
+    </label>
+
+    <div id="followUpFieldsWrap" class="hidden">
+      <label>Follow-Up Category</label>
+
+      <select id="followUpCategory">
+        <option value="Repair Needed">Repair Needed</option>
+        <option value="Equipment / Replacement Needed">Equipment / Replacement Needed</option>
+        <option value="Supplies to Order">Supplies to Order</option>
+        <option value="Lost / Missing Equipment">Lost / Missing Equipment</option>
+      </select>
+
+      <label>Next Action</label>
+
+      <input
+        id="followUpNextAction"
+        type="text"
+        placeholder="Example: Ship to shop">
+    </div>
+
     <button class="primary full"
       style="margin-top:14px;"
       onclick="completeRequest(${id})">
@@ -1400,6 +1427,15 @@ function toggleClientReportCategory() {
     .classList.toggle("hidden", !checked);
 }
 
+function toggleFollowUpFields() {
+  const checked =
+    document.getElementById("followUpCheck").checked;
+
+  document
+    .getElementById("followUpFieldsWrap")
+    .classList.toggle("hidden", !checked);
+}
+
 async function completeRequest(id) {
   const notes =
     document.getElementById("resolutionNotes")
@@ -1420,6 +1456,43 @@ async function completeRequest(id) {
     clientReport
       ? document.getElementById("clientReportCategory").value
       : null;
+  const createFollowUp =
+    document.getElementById("followUpCheck").checked;
+
+  const followUpCategory =
+    createFollowUp
+      ? document.getElementById("followUpCategory").value
+      : null;
+
+  const followUpNextAction =
+    createFollowUp
+      ? document.getElementById("followUpNextAction").value.trim()
+      : null;
+
+  if (createFollowUp && !followUpNextAction) {
+
+    alert("Please enter a short Next Action.");
+
+    return;
+
+  }
+
+  const { data: requestRecord, error: requestLookupError } =
+    await sb
+      .from("Requests")
+      .select("description, show_id")
+      .eq("id", id)
+      .single();
+
+  if (requestLookupError) {
+
+    alert(requestLookupError.message);
+
+    return;
+
+  }
+
+
 
   const { error } = await sb
     .from("Requests")
@@ -1443,6 +1516,41 @@ async function completeRequest(id) {
     alert(error.message);
     return;
   }
+  if (createFollowUp) {
+
+    const { error: followUpError } = await sb
+      .from("Follow_Ups")
+      .insert({
+        request_id: id,
+        show_id: requestRecord.show_id,
+        category: followUpCategory,
+        title: requestRecord.description || "Follow-Up",
+        next_action: followUpNextAction,
+        status: "open",
+        created_by:
+          selectedEngineer
+            ? selectedEngineer.name
+            : null
+      });
+
+    if (followUpError) {
+
+      alert(
+        "Request completed, but Follow-Up could not be saved:\n\n" +
+        followUpError.message
+      );
+
+      closeModal();
+
+      await loadRequests();
+
+      return;
+
+    }
+
+  }
+
+
 
   closeModal();
   await loadRequests();
@@ -1465,6 +1573,16 @@ function showMenu() {
         onclick="showCompleted()">
         <strong>Completed</strong>
         <span>Current show history</span>
+      </button>
+
+      <button class="menu-card"
+
+        onclick="showFollowUps()">
+
+        <strong>Follow-Ups</strong>
+
+        <span>Repairs, equipment, supplies and missing gear</span>
+
       </button>
 
       <button class="menu-card"
@@ -1620,6 +1738,533 @@ function completedCardHtml(r) {
   `;
 }
 
+
+
+
+
+function openAddFollowUp() {
+
+  const hasCurrentShow =
+    currentShow && currentShow.id;
+
+  modal.innerHTML = `
+    <h2>Add Follow-Up</h2>
+
+    <label>Category</label>
+    <select id="manualFollowUpCategory">
+      <option value="Repair Needed">
+        Repair Needed
+      </option>
+      <option value="Equipment / Replacement Needed">
+        Equipment / Replacement Needed
+      </option>
+      <option value="Supplies to Order">
+        Supplies to Order
+      </option>
+      <option value="Lost / Missing Equipment">
+        Lost / Missing Equipment
+      </option>
+    </select>
+
+    <label style="margin-top:12px;">
+      What needs attention?
+    </label>
+    <input
+      id="manualFollowUpTitle"
+      type="text"
+      placeholder="Example: Camera 3 headset cable"
+    >
+
+    <label style="margin-top:12px;">
+      Next Action
+    </label>
+    <input
+      id="manualFollowUpNextAction"
+      type="text"
+      placeholder="Example: Order replacement"
+    >
+
+    <label style="margin-top:12px;">
+      Show
+    </label>
+
+    <select id="manualFollowUpShow">
+      ${
+        hasCurrentShow
+          ? `
+            <option value="${currentShow.id}" selected>
+              ${escapeHtml(currentShow.show_name)}
+              ${
+                currentShow.venue
+                  ? " — " + escapeHtml(currentShow.venue)
+                  : ""
+              }
+            </option>
+          `
+          : ""
+      }
+
+      <option value="">
+        GENERAL / NO SHOW
+      </option>
+    </select>
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="saveManualFollowUp()">
+      ADD FOLLOW-UP
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+
+async function saveManualFollowUp() {
+
+  const category =
+    document
+      .getElementById("manualFollowUpCategory")
+      .value;
+
+  const title =
+    document
+      .getElementById("manualFollowUpTitle")
+      .value
+      .trim();
+
+  const nextAction =
+    document
+      .getElementById("manualFollowUpNextAction")
+      .value
+      .trim();
+
+  const showValue =
+    document
+      .getElementById("manualFollowUpShow")
+      .value;
+
+  if (!title) {
+    alert("Please enter what needs attention.");
+    return;
+  }
+
+  if (!nextAction) {
+    alert("Please enter a short Next Action.");
+    return;
+  }
+
+  const showId =
+    showValue
+      ? Number(showValue)
+      : null;
+
+
+  // ---------------------------------------------
+  // CHECK FOR POSSIBLE DUPLICATE OPEN FOLLOW-UP
+  // ---------------------------------------------
+
+  let duplicateQuery = sb
+    .from("Follow_Ups")
+    .select("id, title, next_action")
+    .eq("status", "open");
+
+  if (showId === null) {
+    duplicateQuery =
+      duplicateQuery.is("show_id", null);
+  } else {
+    duplicateQuery =
+      duplicateQuery.eq("show_id", showId);
+  }
+
+  const {
+    data: existingFollowUps,
+    error: duplicateError
+  } = await duplicateQuery;
+
+  if (duplicateError) {
+    alert(duplicateError.message);
+    return;
+  }
+
+
+  const normalize = value =>
+    (value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+
+  const newWords =
+    normalize(title)
+      .split(" ")
+      .filter(word => word.length > 2);
+
+
+  const possibleDuplicate =
+    (existingFollowUps || []).find(item => {
+
+      const existingTitle =
+        normalize(item.title);
+
+      if (!existingTitle) {
+        return false;
+      }
+
+      const existingWords =
+        existingTitle
+          .split(" ")
+          .filter(word => word.length > 2);
+
+      if (
+        normalize(title) === existingTitle
+      ) {
+        return true;
+      }
+
+      const matchingWords =
+        newWords.filter(word =>
+          existingWords.includes(word)
+        );
+
+      const smallestWordCount =
+        Math.min(
+          newWords.length,
+          existingWords.length
+        );
+
+      return (
+        smallestWordCount >= 2 &&
+        matchingWords.length >=
+          Math.ceil(smallestWordCount * 0.6)
+      );
+    });
+
+
+  if (possibleDuplicate) {
+
+    const addAnyway = confirm(
+      "Possible existing Follow-Up found:\n\n" +
+      possibleDuplicate.title +
+      "\n\nNext Action: " +
+      (possibleDuplicate.next_action || "—") +
+      "\n\nAdd this new Follow-Up anyway?"
+    );
+
+    if (!addAnyway) {
+      return;
+    }
+  }
+
+
+  // ---------------------------------------------
+  // SAVE FOLLOW-UP
+  // ---------------------------------------------
+
+  const { error } = await sb
+    .from("Follow_Ups")
+    .insert({
+      request_id: null,
+      show_id: showId,
+      category,
+      title,
+      next_action: nextAction,
+      status: "open",
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  closeModal();
+
+  followUpViewStatus = "open";
+
+  await showFollowUps();
+}
+
+
+let followUpViewStatus = "open";
+
+function setFollowUpViewStatus(status) {
+
+  followUpViewStatus = status;
+
+  showFollowUps();
+
+}
+
+async function resolveFollowUp(id) {
+
+  const resolution = prompt(
+    "Resolution:"
+  );
+
+  if (resolution === null) {
+    return;
+  }
+
+  const cleanResolution = resolution.trim();
+
+  if (!cleanResolution) {
+    alert("Please enter a short resolution.");
+    return;
+  }
+
+  const { error } = await sb
+    .from("Follow_Ups")
+    .update({
+      status: "resolved",
+      resolved_at: new Date().toISOString(),
+      resolved_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null,
+      resolution: cleanResolution
+    })
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await showFollowUps();
+}
+
+async function showFollowUps() {
+
+  hideViews();
+
+  menuView.classList.remove("hidden");
+
+  menuView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header">
+        <div>
+          <h2>Follow-Ups</h2>
+          <div class="muted">
+            Open items across all shows
+          </div>
+        </div>
+
+        <button class="secondary"
+          onclick="showMenu()">
+          BACK
+        </button>
+      </div>
+
+      <div style="display:flex;gap:8px;margin:18px 0 8px 0;">
+
+        <button
+          class="${followUpViewStatus === "open" ? "primary" : "secondary"}"
+          onclick="setFollowUpViewStatus('open')">
+          OPEN
+        </button>
+
+        <button
+          class="${followUpViewStatus === "resolved" ? "primary" : "secondary"}"
+          onclick="setFollowUpViewStatus('resolved')">
+          RESOLVED
+        </button>
+
+      </div>
+
+      <button
+        class="primary"
+        style="margin:10px 0 4px 0;"
+        onclick="openAddFollowUp()">
+        ADD FOLLOW-UP
+      </button>
+
+      <div id="followUpsContent">
+        Loading...
+      </div>
+
+    </div>
+  `;
+
+  const { data: followUps, error } = await sb
+    .from("Follow_Ups")
+    .select("*")
+    .eq("status", followUpViewStatus)
+    .order(
+      followUpViewStatus === "resolved"
+        ? "resolved_at"
+        : "created_at",
+      { ascending: false }
+    );
+
+  if (error) {
+
+    document.getElementById("followUpsContent").innerHTML =
+      `<div class="empty-state">
+        ${escapeHtml(error.message)}
+      </div>`;
+
+    return;
+  }
+
+  const rows = followUps || [];
+
+  if (!rows.length) {
+
+    document.getElementById("followUpsContent").innerHTML = `
+      <div class="empty-state">
+        ${
+          followUpViewStatus === "open"
+            ? "No open follow-ups."
+            : "No resolved follow-ups."
+        }
+      </div>
+    `;
+
+    return;
+  }
+
+  const showIds =
+    [...new Set(
+      rows
+        .map(r => r.show_id)
+        .filter(Boolean)
+    )];
+
+  let showMap = {};
+
+  if (showIds.length) {
+
+    const { data: shows } = await sb
+      .from("Shows")
+      .select("id, show_name, venue")
+      .in("id", showIds);
+
+    (shows || []).forEach(show => {
+      showMap[show.id] = show;
+    });
+
+  }
+
+  const categories = [
+    "Repair Needed",
+    "Equipment / Replacement Needed",
+    "Supplies to Order",
+    "Lost / Missing Equipment"
+  ];
+
+  document.getElementById("followUpsContent").innerHTML =
+    categories.map(category => {
+
+      const items =
+        rows.filter(r => r.category === category);
+
+      if (!items.length) {
+        return "";
+      }
+
+      return `
+        <div style="margin-top:22px;">
+
+          <h3 style="margin-bottom:10px;">
+            ${escapeHtml(category)}
+            <span class="muted">
+              (${items.length})
+            </span>
+          </h3>
+
+          ${items.map(r => {
+
+            const show = r.show_id
+              ? showMap[r.show_id]
+              : null;
+
+            const showText = show
+              ? show.show_name +
+                (show.venue ? " — " + show.venue : "")
+              : "GENERAL / NO SHOW";
+
+            return `
+              <div class="request-card"
+                style="margin-bottom:10px;">
+
+                <strong>
+                  ${escapeHtml(r.title || "Follow-Up")}
+                </strong>
+
+                <div style="margin-top:8px;">
+                  <strong>Next Action:</strong>
+                  ${escapeHtml(r.next_action || "—")}
+                </div>
+
+                <div class="muted"
+                  style="margin-top:8px;">
+                  ${escapeHtml(showText)}
+                </div>
+
+                <div class="muted"
+                  style="margin-top:4px;">
+                  Added by:
+                  ${escapeHtml(r.created_by || "—")}
+                </div>
+
+                ${
+                  followUpViewStatus === "resolved"
+                    ? `
+                      <div style="margin-top:10px;">
+                        <strong>Resolution:</strong>
+                        ${escapeHtml(r.resolution || "—")}
+                      </div>
+
+                      <div class="muted"
+                        style="margin-top:4px;">
+                        Resolved by:
+                        ${escapeHtml(r.resolved_by || "—")}
+                      </div>
+
+                      <div class="muted"
+                        style="margin-top:4px;">
+                        Resolved:
+                        ${
+                          r.resolved_at
+                            ? new Date(r.resolved_at).toLocaleString()
+                            : "—"
+                        }
+                      </div>
+                    `
+                    : `
+                      <button class="primary"
+                        style="margin-top:12px;"
+                        onclick="resolveFollowUp(${r.id})">
+                        RESOLVE
+                      </button>
+                    `
+                }
+
+              </div>
+            `;
+
+          }).join("")}
+
+        </div>
+      `;
+
+    }).join("");
+
+}
 
 async function showReports() {
   hideViews();
@@ -2483,14 +3128,48 @@ async function startShow() {
 }
 
 async function confirmCloseShow() {
+
   await loadRequests();
 
-  const count = activeRequests.length;
+  const requestCount =
+    activeRequests.length;
 
-  const text =
-    count
-    ? `Close ${currentShow.show_name}?\n\n${count} request(s) are still active.`
-    : `Close ${currentShow.show_name}?`;
+  const { data: followUps, error: followUpError } =
+    await sb
+      .from("Follow_Ups")
+      .select("id")
+      .eq("show_id", currentShow.id)
+      .eq("status", "open");
+
+  if (followUpError) {
+    alert(followUpError.message);
+    return;
+  }
+
+  const followUpCount =
+    followUps ? followUps.length : 0;
+
+  let text =
+    `Close ${currentShow.show_name}?`;
+
+  if (requestCount || followUpCount) {
+
+    text += "\n\n";
+
+    if (requestCount) {
+      text +=
+        `${requestCount} request(s) are still active.`;
+    }
+
+    if (requestCount && followUpCount) {
+      text += "\n";
+    }
+
+    if (followUpCount) {
+      text +=
+        `${followUpCount} follow-up(s) are still open.`;
+    }
+  }
 
   if (!confirm(text)) {
     return;
@@ -2498,6 +3177,7 @@ async function confirmCloseShow() {
 
   await closeShow();
 }
+
 
 async function closeShow() {
   if (!currentShow) {
