@@ -100,3 +100,14 @@ button:disabled {
     display: none !important;
   }
 }
+
+
+@media print {
+
+  body:not(.include-request-photos)
+  .request-photo-section {
+    display:none !important;
+  }
+
+}
+

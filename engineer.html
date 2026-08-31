@@ -2892,6 +2892,54 @@ async function saveAdditionalRequestPhotos(requestId) {
 }
 
 
+
+function printRequestDetail() {
+
+  const box =
+    document.getElementById("includeRequestPhotos");
+
+  const includePhotos =
+    box && box.checked;
+
+  const photoSections =
+    Array.from(
+      document.querySelectorAll(
+        ".request-photo-section"
+      )
+    );
+
+  if (!includePhotos) {
+
+    photoSections.forEach(section => {
+      section.dataset.beforePrintDisplay =
+        section.style.display || "";
+
+      section.style.display = "none";
+    });
+  }
+
+  const restore = () => {
+
+    photoSections.forEach(section => {
+
+      section.style.display =
+        section.dataset.beforePrintDisplay || "";
+
+      delete section.dataset.beforePrintDisplay;
+    });
+  };
+
+  window.addEventListener(
+    "afterprint",
+    restore,
+    { once:true }
+  );
+
+  window.print();
+
+}
+
+
 async function openRequestDetail(requestId) {
 
   hideViews();
@@ -3041,8 +3089,24 @@ const fmt = value =>
           flex-wrap:wrap;
         ">
 
-          <button class="small-btn"
-            onclick="window.print()">
+          
+          <label class="no-print" style="
+            display:flex;
+            align-items:center;
+            gap:6px;
+            font-size:13px;
+            font-weight:800;
+          ">
+            <input
+              id="includeRequestPhotos"
+              type="checkbox"
+              style="width:auto;margin:0;"
+            >
+            Include Photos
+          </label>
+
+<button class="small-btn"
+            onclick="printRequestDetail()">
             PRINT REQUEST
           </button>
 
@@ -3238,7 +3302,7 @@ const fmt = value =>
         requestPhotos.length
           ? `
             
-            <div style="
+            <div class="request-photo-section" style="
               display:flex;
               justify-content:space-between;
               gap:10px;
@@ -3259,7 +3323,7 @@ const fmt = value =>
             </div>
 
 
-            <div style="
+            <div class="request-photo-section" style="
               display:grid;
               grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
               gap:12px;
