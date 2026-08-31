@@ -1468,6 +1468,59 @@ function openComplete(id) {
     <textarea id="resolutionNotes"
       placeholder="Example: Replaced bad SDI jumper"></textarea>
 
+    <div style="
+      margin-top:18px;
+      padding:14px;
+      border:1px solid #cbd5e1;
+      border-radius:10px;
+      background:#f8fafc;
+    ">
+
+      <div style="
+        font-weight:900;
+        font-size:16px;
+        margin-bottom:10px;
+      ">
+        Damage / Gear Documentation
+      </div>
+
+      <label>
+        Gear Location
+      </label>
+
+      <input
+        id="gearLocation"
+        type="text"
+        placeholder="Example: B Unit repair shelf"
+      >
+
+      <label style="margin-top:14px;">
+        Photos
+      </label>
+
+      <input
+        id="completionPhotos"
+        type="file"
+        accept="image/*"
+        multiple
+        onchange="renderCompletionPhotoFields()"
+      >
+
+      <div style="
+        color:#64748b;
+        font-size:13px;
+        margin-top:5px;
+      ">
+        Add damage, serial number, or equipment photos.
+      </div>
+
+      <div id="completionPhotoFields"
+        style="margin-top:10px;">
+      </div>
+
+    </div>
+
+
     <label style="display:flex;align-items:center;gap:10px;margin-top:16px;">
       <input
         id="endOfShowCheck"
@@ -1549,6 +1602,62 @@ function openComplete(id) {
   openModal();
 }
 
+
+function renderCompletionPhotoFields() {
+
+  const input =
+    document.getElementById("completionPhotos");
+
+  const wrap =
+    document.getElementById("completionPhotoFields");
+
+  if (!input || !wrap) {
+    return;
+  }
+
+  const files =
+    Array.from(input.files || []);
+
+  if (!files.length) {
+
+    wrap.innerHTML = "";
+
+    return;
+  }
+
+  wrap.innerHTML =
+    files.map((file, index) => `
+
+      <div style="
+        padding:10px;
+        margin-top:8px;
+        border:1px solid #e2e8f0;
+        border-radius:8px;
+        background:white;
+      ">
+
+        <div style="
+          font-weight:800;
+          font-size:14px;
+          overflow-wrap:anywhere;
+        ">
+          📷 ${escapeHtml(file.name)}
+        </div>
+
+        <input
+          id="completionPhotoCaption_${index}"
+          type="text"
+          maxlength="120"
+          placeholder="Small caption (optional)"
+          style="margin-top:7px;"
+        >
+
+      </div>
+
+    `).join("");
+}
+
+
 function toggleEndOfShowCategory() {
   const checked =
     document.getElementById("endOfShowCheck").checked;
@@ -1576,10 +1685,180 @@ function toggleFollowUpFields() {
     .classList.toggle("hidden", !checked);
 }
 
+
+async function uploadCompletionPhotos(requestId) {
+
+  const input =
+    document.getElementById("completionPhotos");
+
+  if (!input) {
+    return { ok: true, uploaded: [] };
+  }
+
+  const files =
+    Array.from(input.files || []);
+
+  if (!files.length) {
+    return { ok: true, uploaded: [] };
+  }
+
+  const uploaded = [];
+
+  for (let index = 0; index < files.length; index++) {
+
+    const file = files[index];
+
+    const captionInput =
+      document.getElementById(
+        `completionPhotoCaption_${index}`
+      );
+
+    const caption =
+      captionInput
+        ? captionInput.value.trim()
+        : "";
+
+    const originalName =
+      file.name || "photo";
+
+    const dot =
+      originalName.lastIndexOf(".");
+
+    const extension =
+      dot >= 0
+        ? originalName.substring(dot).toLowerCase()
+        : "";
+
+    const uniqueId =
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${index}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
+
+    const storagePath =
+      `${requestId}/${uniqueId}${extension}`;
+
+    const { error: uploadError } =
+      await sb.storage
+        .from("request-photos")
+        .upload(
+          storagePath,
+          file,
+          {
+            cacheControl: "3600",
+            upsert: false,
+            contentType:
+              file.type || undefined
+          }
+        );
+
+    if (uploadError) {
+
+      await cleanupCompletionPhotoUploads(
+        uploaded
+      );
+
+      return {
+        ok: false,
+        uploaded: [],
+        error:
+          "Photo upload failed:\n\n" +
+          uploadError.message
+      };
+    }
+
+    const { data: photoRecord, error: recordError } =
+      await sb
+        .from("Request_Photos")
+        .insert({
+          request_id: requestId,
+          storage_path: storagePath,
+          caption: caption || null,
+          added_by:
+            selectedEngineer
+              ? selectedEngineer.name
+              : "Unknown Engineer"
+        })
+        .select("id, storage_path")
+        .single();
+
+    if (recordError) {
+
+      await sb.storage
+        .from("request-photos")
+        .remove([storagePath]);
+
+      await cleanupCompletionPhotoUploads(
+        uploaded
+      );
+
+      return {
+        ok: false,
+        uploaded: [],
+        error:
+          "Photo record could not be saved:\n\n" +
+          recordError.message
+      };
+    }
+
+    uploaded.push({
+      id: photoRecord.id,
+      storage_path: storagePath
+    });
+  }
+
+  return {
+    ok: true,
+    uploaded
+  };
+}
+
+
+async function cleanupCompletionPhotoUploads(uploaded) {
+
+  if (!uploaded || !uploaded.length) {
+    return;
+  }
+
+  const ids =
+    uploaded
+      .map(item => item.id)
+      .filter(Boolean);
+
+  const paths =
+    uploaded
+      .map(item => item.storage_path)
+      .filter(Boolean);
+
+  if (ids.length) {
+
+    await sb
+      .from("Request_Photos")
+      .delete()
+      .in("id", ids);
+  }
+
+  if (paths.length) {
+
+    await sb.storage
+      .from("request-photos")
+      .remove(paths);
+  }
+}
+
+
 async function completeRequest(id) {
   const notes =
     document.getElementById("resolutionNotes")
       .value.trim();
+
+  const gearLocationValue =
+    document.getElementById("gearLocation")
+      .value.trim();
+
+
 
   const endOfShow =
     document.getElementById("endOfShowCheck").checked;
@@ -1617,7 +1896,19 @@ async function completeRequest(id) {
 
   }
 
-  const { data: requestRecord, error: requestLookupError } =
+  
+  const photoUploadResult =
+    await uploadCompletionPhotos(id);
+
+  if (!photoUploadResult.ok) {
+
+    alert(photoUploadResult.error);
+
+    return;
+  }
+
+
+const { data: requestRecord, error: requestLookupError } =
     await sb
       .from("Requests")
       .select("description, show_id")
@@ -1645,6 +1936,10 @@ async function completeRequest(id) {
           : null,
       resolution_notes:
         notes || null,
+
+      gear_location:
+        gearLocationValue || null,
+
       end_of_show_report: endOfShow,
       end_of_show_category: category,
       client_report: clientReport,
@@ -1653,8 +1948,15 @@ async function completeRequest(id) {
     .eq("id", id);
 
   if (error) {
+
+    await cleanupCompletionPhotoUploads(
+      photoUploadResult.uploaded
+    );
+
     alert(error.message);
+
     return;
+
   }
   if (createFollowUp) {
 
@@ -2373,6 +2675,223 @@ function filterRequestHistory() {
 
 
 
+
+function openAddRequestPhotos(requestId) {
+
+  modal.innerHTML = `
+    <h2>Add Documentation Photos</h2>
+
+    <label>
+      Photos
+    </label>
+
+    <input
+      id="detailPhotoInput"
+      type="file"
+      accept="image/*"
+      multiple
+      onchange="renderDetailPhotoFields()"
+    >
+
+    <div style="
+      color:#64748b;
+      font-size:13px;
+      margin-top:5px;
+    ">
+      Add damage, serial number, repair, shipping, or equipment photos.
+    </div>
+
+    <div id="detailPhotoFields"
+      style="margin-top:10px;">
+    </div>
+
+    <button
+      class="primary full"
+      style="margin-top:14px;"
+      onclick="saveAdditionalRequestPhotos(${requestId})">
+      SAVE PHOTOS
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+
+function renderDetailPhotoFields() {
+
+  const input =
+    document.getElementById("detailPhotoInput");
+
+  const wrap =
+    document.getElementById("detailPhotoFields");
+
+  if (!input || !wrap) {
+    return;
+  }
+
+  const files =
+    Array.from(input.files || []);
+
+  if (!files.length) {
+
+    wrap.innerHTML = "";
+
+    return;
+  }
+
+  wrap.innerHTML =
+    files.map((file, index) => `
+
+      <div style="
+        padding:10px;
+        margin-top:8px;
+        border:1px solid #e2e8f0;
+        border-radius:8px;
+        background:white;
+      ">
+
+        <div style="
+          font-weight:800;
+          font-size:14px;
+          overflow-wrap:anywhere;
+        ">
+          📷 ${escapeHtml(file.name)}
+        </div>
+
+        <input
+          id="detailPhotoCaption_${index}"
+          type="text"
+          maxlength="120"
+          placeholder="Small caption (optional)"
+          style="margin-top:7px;"
+        >
+
+      </div>
+
+    `).join("");
+}
+
+
+async function saveAdditionalRequestPhotos(requestId) {
+
+  const input =
+    document.getElementById("detailPhotoInput");
+
+  const files =
+    input
+      ? Array.from(input.files || [])
+      : [];
+
+  if (!files.length) {
+
+    alert("Choose at least one photo.");
+
+    return;
+  }
+
+  const uploaded = [];
+
+  for (let index = 0; index < files.length; index++) {
+
+    const file = files[index];
+
+    const captionInput =
+      document.getElementById(
+        `detailPhotoCaption_${index}`
+      );
+
+    const caption =
+      captionInput
+        ? captionInput.value.trim()
+        : "";
+
+    const originalName =
+      file.name || "photo";
+
+    const dot =
+      originalName.lastIndexOf(".");
+
+    const extension =
+      dot >= 0
+        ? originalName.substring(dot).toLowerCase()
+        : "";
+
+    const uniqueId =
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${index}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
+
+    const storagePath =
+      `${requestId}/${uniqueId}${extension}`;
+
+    const { error: uploadError } =
+      await sb.storage
+        .from("request-photos")
+        .upload(
+          storagePath,
+          file,
+          {
+            cacheControl: "3600",
+            upsert: false,
+            contentType:
+              file.type || undefined
+          }
+        );
+
+    if (uploadError) {
+
+      alert(
+        "Photo upload failed:\n\n" +
+        uploadError.message
+      );
+
+      return;
+    }
+
+    const { data: record, error: recordError } =
+      await sb
+        .from("Request_Photos")
+        .insert({
+          request_id: requestId,
+          storage_path: storagePath,
+          caption: caption || null,
+          added_by:
+            selectedEngineer
+              ? selectedEngineer.name
+              : "Unknown Engineer"
+        })
+        .select("id")
+        .single();
+
+    if (recordError) {
+
+      alert(
+        "Photo record could not be saved:\n\n" +
+        recordError.message
+      );
+
+      return;
+    }
+
+    uploaded.push(record);
+  }
+
+  closeModal();
+
+  await openRequestDetail(requestId);
+}
+
+
 async function openRequestDetail(requestId) {
 
   hideViews();
@@ -2439,7 +2958,40 @@ async function openRequestDetail(requestId) {
   }
 
 
-  const fmt = value =>
+  
+  const { data: photoRecords, error: photoError } =
+    await sb
+      .from("Request_Photos")
+      .select("*")
+      .eq("request_id", requestId)
+      .order("created_at", { ascending: true });
+
+  if (photoError) {
+    console.error(photoError);
+  }
+
+  const requestPhotos = [];
+
+  for (const photo of (photoRecords || [])) {
+
+    const { data: signedData, error: signedError } =
+      await sb.storage
+        .from("request-photos")
+        .createSignedUrl(photo.storage_path, 3600);
+
+    if (signedError) {
+      console.error(signedError);
+      continue;
+    }
+
+    requestPhotos.push({
+      ...photo,
+      signed_url: signedData?.signedUrl || ""
+    });
+  }
+
+
+const fmt = value =>
     value
       ? new Date(value).toLocaleString()
       : "—";
@@ -2564,6 +3116,18 @@ async function openRequestDetail(requestId) {
           ${escapeHtml(request.request_type || "—")}
         </div>
 
+        ${
+          request.gear_location
+            ? `
+              <div>
+                <strong>Gear Location:</strong>
+                ${escapeHtml(request.gear_location)}
+              </div>
+            `
+            : ""
+        }
+
+
       </div>
 
 
@@ -2669,7 +3233,127 @@ async function openRequestDetail(requestId) {
       }
 
 
-      <h3 style="margin-top:22px;">
+      
+      ${
+        requestPhotos.length
+          ? `
+            
+            <div style="
+              display:flex;
+              justify-content:space-between;
+              gap:10px;
+              align-items:center;
+              margin-top:22px;
+            ">
+
+              <h3 style="margin:0;">
+                Documentation Photos (${requestPhotos.length})
+              </h3>
+
+              <button
+                class="small-btn no-print"
+                onclick="openAddRequestPhotos(${request.id})">
+                ADD PHOTOS
+              </button>
+
+            </div>
+
+
+            <div style="
+              display:grid;
+              grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+              gap:12px;
+              margin-top:8px;
+            ">
+
+              ${requestPhotos.map(photo => `
+
+                <div class="completed-card"
+                  style="
+                    padding:10px;
+                    break-inside:avoid;
+                  ">
+
+                  <img
+                    src="${escapeHtml(photo.signed_url)}"
+                    alt="Request documentation"
+                    style="
+                      width:100%;
+                      height:220px;
+                      object-fit:contain;
+                      background:#0f172a;
+                      border-radius:8px;
+                      display:block;
+                    "
+                  >
+
+                  ${
+                    photo.caption
+                      ? `
+                        <div style="
+                          font-weight:800;
+                          margin-top:8px;
+                        ">
+                          ${escapeHtml(photo.caption)}
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  <div style="
+                    color:#64748b;
+                    font-size:13px;
+                    margin-top:5px;
+                  ">
+                    ${escapeHtml(photo.added_by || "Unknown Engineer")}
+                    ·
+                    ${escapeHtml(fmt(photo.created_at))}
+                  </div>
+
+                </div>
+
+              `).join("")}
+
+            </div>
+          `
+          : ""
+      }
+
+
+
+      ${
+        !requestPhotos.length
+          ? `
+            <div style="
+              display:flex;
+              justify-content:space-between;
+              gap:10px;
+              align-items:center;
+              margin-top:22px;
+            ">
+
+              <h3 style="margin:0;">
+                Documentation Photos (0)
+              </h3>
+
+              <button
+                class="small-btn no-print"
+                onclick="openAddRequestPhotos(${request.id})">
+                ADD PHOTOS
+              </button>
+
+            </div>
+
+            <div class="empty"
+              style="margin-top:8px;">
+              No documentation photos yet.
+            </div>
+          `
+          : ""
+      }
+
+
+<h3 style="margin-top:22px;">
         Follow-Ups (${(followUps || []).length})
       </h3>
 
