@@ -94,3 +94,9 @@ button:disabled {
 .error {
   color: #b42318;
 }
+/* Print cleanup */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

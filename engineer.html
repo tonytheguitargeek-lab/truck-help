@@ -1716,6 +1716,15 @@ function showMenu() {
       </button>
 
       <button class="menu-card"
+        onclick="showRequestHistory()">
+
+        <strong>Request History</strong>
+
+        <span>Search requests across all shows</span>
+
+      </button>
+
+      <button class="menu-card"
 
         onclick="showFollowUps()">
 
@@ -1769,6 +1778,988 @@ function showMenu() {
         <strong>Logout</strong>
         <span>Sign this browser out</span>
       </button>
+
+    </div>
+  `;
+}
+
+
+
+
+async function showRequestHistory() {
+
+  hideViews();
+  menuView.classList.remove("hidden");
+
+  menuView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header">
+
+        <div>
+          <h2 style="margin:0;">
+            Request History
+          </h2>
+
+          <div style="color:#64748b;">
+            Requests across all shows
+          </div>
+        </div>
+
+        <button class="small-btn"
+          onclick="showMenu()">
+          BACK
+        </button>
+
+      </div>
+
+      <div id="requestHistoryContent"
+        style="margin-top:18px;">
+        Loading...
+      </div>
+
+    </div>
+  `;
+
+
+  const { data: requests, error: requestError } =
+    await sb
+      .from("Requests")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+
+  if (requestError) {
+
+    console.error(requestError);
+
+    document.getElementById(
+      "requestHistoryContent"
+    ).innerHTML = `
+      <div class="error">
+        ${escapeHtml(requestError.message)}
+      </div>
+    `;
+
+    return;
+  }
+
+
+  const { data: shows, error: showError } =
+    await sb
+      .from("Shows")
+      .select("id, show_name, show_number, start_date");
+
+
+  if (showError) {
+    console.error(showError);
+  }
+
+
+  const showMap =
+    new Map(
+      (shows || []).map(
+        s => [String(s.id), s]
+      )
+    );
+
+
+  const rows = requests || [];
+
+  const content =
+    document.getElementById(
+      "requestHistoryContent"
+    );
+
+
+  if (!rows.length) {
+
+    content.innerHTML = `
+      <div class="empty">
+        No requests found.
+      </div>
+    `;
+
+    return;
+  }
+
+
+  const departments =
+    [...new Set(
+      rows
+        .map(r => r.department)
+        .filter(Boolean)
+    )].sort();
+
+
+  const engineers =
+    [...new Set(
+      rows
+        .flatMap(r => [
+          r.claimed_by,
+          r.completed_by
+        ])
+        .filter(Boolean)
+    )].sort();
+
+
+  const cards =
+    rows.map(r => {
+
+      const show =
+        showMap.get(String(r.show_id));
+
+      const showName =
+        show?.show_name || "";
+
+      const showNumber =
+        show?.show_number || "";
+
+      const date =
+        r.created_at
+          ? new Date(r.created_at)
+              .toLocaleString()
+          : "";
+
+      const statusGroup =
+        r.status === "complete"
+          ? "complete"
+          : r.status === "in-progress"
+            ? "in-progress"
+            : "open";
+
+      const searchText =
+        [
+          r.id,
+          showName,
+          showNumber,
+          r.requester_name,
+          r.department,
+          r.location,
+          r.request_type,
+          r.description,
+          r.resolution_notes,
+          r.claimed_by,
+          r.completed_by
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+      return `
+        <div
+          class="completed-card request-history-card"
+
+          onclick="openRequestDetail(${r.id})"
+
+          data-search="${escapeHtml(searchText)}"
+
+          data-department="${escapeHtml(
+            (r.department || "").toLowerCase()
+          )}"
+
+          data-status="${escapeHtml(statusGroup)}"
+
+          data-engineers="${escapeHtml(
+            [
+              r.claimed_by,
+              r.completed_by
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase()
+          )}"
+
+          data-priority="${
+            r.is_priority ? "yes" : "no"
+          }"
+
+          style="
+            margin-top:12px;
+            cursor:pointer;
+          ">
+
+          <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            gap:12px;
+          ">
+
+            <div>
+
+              <div style="
+                font-size:17px;
+                font-weight:900;
+              ">
+                Request #${escapeHtml(String(r.id))}
+              </div>
+
+              <div style="
+                color:#64748b;
+                margin-top:3px;
+              ">
+                ${escapeHtml(showName || "Unknown Show")}
+
+                ${
+                  showNumber
+                    ? ` — ${escapeHtml(showNumber)}`
+                    : ""
+                }
+              </div>
+
+            </div>
+
+            <div style="
+              display:flex;
+              gap:6px;
+              flex-wrap:wrap;
+              justify-content:flex-end;
+            ">
+
+              ${
+                r.is_priority
+                  ? `<span class="badge">PRIORITY</span>`
+                  : ""
+              }
+
+              <span class="badge">
+                ${escapeHtml(
+                  statusGroup === "complete"
+                    ? "COMPLETE"
+                    : statusGroup === "in-progress"
+                      ? "IN PROGRESS"
+                      : "OPEN"
+                )}
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <div style="
+            margin-top:10px;
+            line-height:1.6;
+          ">
+
+            <div>
+              <strong>Requester:</strong>
+              ${escapeHtml(r.requester_name || "—")}
+            </div>
+
+            <div>
+              <strong>Department:</strong>
+              ${escapeHtml(r.department || "—")}
+            </div>
+
+            <div>
+              <strong>Location:</strong>
+              ${escapeHtml(r.location || "—")}
+            </div>
+
+            <div>
+              <strong>Request:</strong>
+              ${escapeHtml(r.description || "—")}
+            </div>
+
+            ${
+              r.claimed_by
+                ? `
+                  <div>
+                    <strong>Engineer:</strong>
+                    ${escapeHtml(r.claimed_by)}
+                  </div>
+                `
+                : ""
+            }
+
+            ${
+              date
+                ? `
+                  <div style="
+                    color:#64748b;
+                    margin-top:6px;
+                    font-size:14px;
+                  ">
+                    ${escapeHtml(date)}
+                  </div>
+                `
+                : ""
+            }
+
+          </div>
+
+        </div>
+      `;
+    }).join("");
+
+
+  content.innerHTML = `
+
+    <div style="
+      padding:14px;
+      border:1px solid #cbd5e1;
+      border-radius:10px;
+      background:#f8fafc;
+    ">
+
+      <label for="historySearch">
+        Search
+      </label>
+
+      <input
+        id="historySearch"
+        type="text"
+        placeholder="Show, requester, location, problem..."
+        oninput="filterRequestHistory()"
+        style="margin-top:6px;"
+      >
+
+
+      <div style="
+        display:grid;
+        grid-template-columns:
+          repeat(auto-fit, minmax(160px, 1fr));
+        gap:10px;
+        margin-top:12px;
+      ">
+
+
+        <div>
+          <label for="historyDepartment">
+            Department
+          </label>
+
+          <select
+            id="historyDepartment"
+            onchange="filterRequestHistory()">
+
+            <option value="">
+              All Departments
+            </option>
+
+            ${departments.map(d => `
+              <option value="${escapeHtml(d.toLowerCase())}">
+                ${escapeHtml(d)}
+              </option>
+            `).join("")}
+
+          </select>
+        </div>
+
+
+        <div>
+          <label for="historyStatus">
+            Status
+          </label>
+
+          <select
+            id="historyStatus"
+            onchange="filterRequestHistory()">
+
+            <option value="">
+              All Statuses
+            </option>
+
+            <option value="open">
+              Open
+            </option>
+
+            <option value="in-progress">
+              In Progress
+            </option>
+
+            <option value="complete">
+              Completed
+            </option>
+
+          </select>
+        </div>
+
+
+        <div>
+          <label for="historyEngineer">
+            Engineer
+          </label>
+
+          <select
+            id="historyEngineer"
+            onchange="filterRequestHistory()">
+
+            <option value="">
+              All Engineers
+            </option>
+
+            ${engineers.map(e => `
+              <option value="${escapeHtml(e.toLowerCase())}">
+                ${escapeHtml(e)}
+              </option>
+            `).join("")}
+
+          </select>
+        </div>
+
+
+        <div>
+          <label for="historyPriority">
+            Priority
+          </label>
+
+          <select
+            id="historyPriority"
+            onchange="filterRequestHistory()">
+
+            <option value="">
+              All Requests
+            </option>
+
+            <option value="yes">
+              Priority Only
+            </option>
+
+          </select>
+        </div>
+
+      </div>
+
+
+      <div id="historyResultCount"
+        style="
+          margin-top:12px;
+          color:#64748b;
+          font-weight:700;
+        ">
+        ${rows.length} requests
+      </div>
+
+    </div>
+
+
+    <div id="requestHistoryCards">
+      ${cards}
+    </div>
+
+
+    <div
+      id="requestHistoryNoResults"
+      class="empty"
+      style="
+        margin-top:14px;
+        display:none;
+      ">
+      No requests match these filters.
+    </div>
+  `;
+}
+
+
+function filterRequestHistory() {
+
+  const search =
+    (
+      document.getElementById("historySearch")
+        ?.value || ""
+    )
+      .trim()
+      .toLowerCase();
+
+
+  const department =
+    document.getElementById("historyDepartment")
+      ?.value || "";
+
+
+  const status =
+    document.getElementById("historyStatus")
+      ?.value || "";
+
+
+  const engineer =
+    document.getElementById("historyEngineer")
+      ?.value || "";
+
+
+  const priority =
+    document.getElementById("historyPriority")
+      ?.value || "";
+
+
+  const cards =
+    document.querySelectorAll(
+      ".request-history-card"
+    );
+
+
+  let visible = 0;
+
+
+  cards.forEach(card => {
+
+    const matchesSearch =
+      !search ||
+      (card.dataset.search || "")
+        .includes(search);
+
+
+    const matchesDepartment =
+      !department ||
+      card.dataset.department === department;
+
+
+    const matchesStatus =
+      !status ||
+      card.dataset.status === status;
+
+
+    const matchesEngineer =
+      !engineer ||
+      (card.dataset.engineers || "")
+        .includes(engineer);
+
+
+    const matchesPriority =
+      !priority ||
+      card.dataset.priority === priority;
+
+
+    const show =
+      matchesSearch &&
+      matchesDepartment &&
+      matchesStatus &&
+      matchesEngineer &&
+      matchesPriority;
+
+
+    card.style.display =
+      show ? "" : "none";
+
+
+    if (show) {
+      visible++;
+    }
+  });
+
+
+  const count =
+    document.getElementById(
+      "historyResultCount"
+    );
+
+
+  if (count) {
+
+    count.textContent =
+      visible === 1
+        ? "1 request"
+        : `${visible} requests`;
+  }
+
+
+  const noResults =
+    document.getElementById(
+      "requestHistoryNoResults"
+    );
+
+
+  if (noResults) {
+
+    noResults.style.display =
+      visible === 0
+        ? "block"
+        : "none";
+  }
+}
+
+
+
+async function openRequestDetail(requestId) {
+
+  hideViews();
+  menuView.classList.remove("hidden");
+
+  menuView.innerHTML = `
+    <div class="panel">
+      Loading request...
+    </div>
+  `;
+
+
+  const { data: request, error: requestError } =
+    await sb
+      .from("Requests")
+      .select("*")
+      .eq("id", requestId)
+      .single();
+
+
+  if (requestError) {
+
+    console.error(requestError);
+
+    menuView.innerHTML = `
+      <div class="panel">
+        ${escapeHtml(requestError.message)}
+      </div>
+    `;
+
+    return;
+  }
+
+
+  let show = null;
+
+  if (request.show_id) {
+
+    const { data: showData, error: showError } =
+      await sb
+        .from("Shows")
+        .select("*")
+        .eq("id", request.show_id)
+        .maybeSingle();
+
+    if (showError) {
+      console.error(showError);
+    }
+
+    show = showData || null;
+  }
+
+
+  const { data: followUps, error: followError } =
+    await sb
+      .from("Follow_Ups")
+      .select("*")
+      .eq("request_id", requestId)
+      .order("created_at", { ascending: true });
+
+
+  if (followError) {
+    console.error(followError);
+  }
+
+
+  const fmt = value =>
+    value
+      ? new Date(value).toLocaleString()
+      : "—";
+
+
+  const statusText =
+    request.status === "complete"
+      ? "COMPLETE"
+      : request.status === "in-progress"
+        ? "IN PROGRESS"
+        : "OPEN";
+
+
+  menuView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header">
+
+        <div>
+
+          <h2 style="margin:0;">
+            Request #${escapeHtml(String(request.id))}
+          </h2>
+
+          <div style="
+            color:#64748b;
+            margin-top:4px;
+          ">
+            ${
+              show
+                ? escapeHtml(show.show_name || "")
+                : "Unknown Show"
+            }
+
+            ${
+              show?.show_number
+                ? ` — ${escapeHtml(show.show_number)}`
+                : ""
+            }
+          </div>
+
+        </div>
+
+        <div class="no-print" style="
+          display:flex;
+          gap:8px;
+          flex-wrap:wrap;
+        ">
+
+          <button class="small-btn"
+            onclick="window.print()">
+            PRINT REQUEST
+          </button>
+
+          <button class="small-btn"
+            onclick="showRequestHistory()">
+            BACK
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <div style="
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        margin-top:14px;
+      ">
+
+        <span class="badge">
+          ${escapeHtml(statusText)}
+        </span>
+
+        ${
+          request.is_priority
+            ? `<span class="badge">PRIORITY</span>`
+            : ""
+        }
+
+      </div>
+
+
+      <div style="
+        margin-top:16px;
+        padding:14px;
+        border:1px solid #cbd5e1;
+        border-radius:10px;
+        background:#f8fafc;
+        line-height:1.7;
+      ">
+
+        <div>
+          <strong>Requester:</strong>
+          ${escapeHtml(request.requester_name || "—")}
+        </div>
+
+        <div>
+          <strong>Department:</strong>
+          ${escapeHtml(request.department || "—")}
+        </div>
+
+        <div>
+          <strong>Location:</strong>
+          ${escapeHtml(request.location || "—")}
+        </div>
+
+        ${
+          request.phone
+            ? `
+              <div>
+                <strong>Phone:</strong>
+                ${escapeHtml(request.phone)}
+              </div>
+            `
+            : ""
+        }
+
+        <div>
+          <strong>Request Type:</strong>
+          ${escapeHtml(request.request_type || "—")}
+        </div>
+
+      </div>
+
+
+      <h3 style="margin-top:22px;">
+        Request
+      </h3>
+
+      <div class="completed-card"
+        style="margin-top:8px;">
+
+        ${escapeHtml(request.description || "—")}
+
+      </div>
+
+
+      <h3 style="margin-top:22px;">
+        Timeline
+      </h3>
+
+      <div style="
+        border:1px solid #cbd5e1;
+        border-radius:10px;
+        overflow:hidden;
+      ">
+
+        <div style="
+          padding:12px;
+          border-bottom:1px solid #e2e8f0;
+        ">
+          <strong>Submitted</strong><br>
+          ${escapeHtml(fmt(request.created_at))}
+        </div>
+
+        ${
+          request.claimed_at || request.claimed_by
+            ? `
+              <div style="
+                padding:12px;
+                border-bottom:1px solid #e2e8f0;
+              ">
+                <strong>Claimed</strong><br>
+
+                ${
+                  request.claimed_by
+                    ? escapeHtml(request.claimed_by)
+                    : "—"
+                }
+
+                ${
+                  request.claimed_at
+                    ? ` · ${escapeHtml(fmt(request.claimed_at))}`
+                    : ""
+                }
+
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          request.completed_at ||
+          request.completed_by ||
+          request.status === "complete"
+            ? `
+              <div style="
+                padding:12px;
+              ">
+                <strong>Completed</strong><br>
+
+                ${
+                  request.completed_by
+                    ? escapeHtml(request.completed_by)
+                    : "—"
+                }
+
+                ${
+                  request.completed_at
+                    ? ` · ${escapeHtml(fmt(request.completed_at))}`
+                    : ""
+                }
+
+              </div>
+            `
+            : ""
+        }
+
+      </div>
+
+
+      ${
+        request.resolution_notes
+          ? `
+            <h3 style="margin-top:22px;">
+              Resolution / Notes
+            </h3>
+
+            <div class="completed-card"
+              style="margin-top:8px;">
+              ${escapeHtml(request.resolution_notes)}
+            </div>
+          `
+          : ""
+      }
+
+
+      <h3 style="margin-top:22px;">
+        Follow-Ups (${(followUps || []).length})
+      </h3>
+
+      ${
+        followUps && followUps.length
+          ? followUps.map(f => `
+
+              <div class="completed-card"
+                style="margin-top:10px;">
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:12px;
+                  align-items:flex-start;
+                ">
+
+                  <strong>
+                    ${escapeHtml(f.title || "")}
+                  </strong>
+
+                  <span class="badge">
+                    ${escapeHtml(
+                      (f.status || "open").toUpperCase()
+                    )}
+                  </span>
+
+                </div>
+
+                <div style="
+                  color:#64748b;
+                  margin-top:4px;
+                ">
+                  ${escapeHtml(f.category || "")}
+                </div>
+
+                ${
+                  f.next_action
+                    ? `
+                      <div style="margin-top:8px;">
+                        <strong>Next Action:</strong>
+                        ${escapeHtml(f.next_action)}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  f.resolved_by || f.resolved_at
+                    ? `
+                      <div style="margin-top:8px;">
+                        <strong>Resolved:</strong>
+
+                        ${
+                          f.resolved_by
+                            ? escapeHtml(f.resolved_by)
+                            : "—"
+                        }
+
+                        ${
+                          f.resolved_at
+                            ? ` · ${escapeHtml(fmt(f.resolved_at))}`
+                            : ""
+                        }
+
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  f.resolution
+                    ? `
+                      <div style="margin-top:8px;">
+                        <strong>Resolution:</strong>
+                        ${escapeHtml(f.resolution)}
+                      </div>
+                    `
+                    : ""
+                }
+
+              </div>
+
+            `).join("")
+          : `
+            <div class="empty">
+              No follow-ups tied to this request.
+            </div>
+          `
+      }
 
     </div>
   `;
