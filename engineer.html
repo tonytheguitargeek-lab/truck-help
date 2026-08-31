@@ -473,6 +473,180 @@ textarea {
   text-align: center;
 }
 
+
+
+.report-type-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.report-type-tab {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 11px;
+  background: #eef2f7;
+  color: #172033;
+  font-weight: 900;
+}
+
+.report-type-tab.active {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+.client-report-totals {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.client-report-category {
+  margin-top: 22px;
+}
+
+.client-report-category h3 {
+  color: #b91c1c;
+  border-bottom: 2px solid #b91c1c;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  font-weight: 900;
+}
+
+.report-sheet {
+  background: white;
+  color: #172033;
+}
+
+.report-title {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: .5px;
+}
+
+.report-show {
+  font-size: 20px;
+  font-weight: 800;
+  margin-top: 6px;
+}
+
+.report-meta {
+  margin-top: 14px;
+  line-height: 1.7;
+}
+
+.report-totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.report-total-box {
+  background: #eef2f7;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.report-total-number {
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.report-total-label {
+  font-size: 12px;
+  color: #64748b;
+  text-transform: uppercase;
+  font-weight: bold;
+}
+
+.report-category {
+  margin-top: 22px;
+}
+
+.report-category h3 {
+  border-bottom: 2px solid #172033;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+
+.report-item {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  break-inside: avoid;
+}
+
+.report-item-head {
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+
+.report-item-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+  font-size: 14px;
+}
+
+.report-note {
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 9px;
+  margin-top: 9px;
+}
+
+.report-none {
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+  padding: 18px;
+  color: #64748b;
+  text-align: center;
+}
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .topbar,
+  .no-print,
+  .report-type-tabs {
+    display: none !important;
+  }
+
+  .page {
+    max-width: none;
+    padding: 0;
+  }
+
+  .panel {
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .report-sheet {
+    color: black;
+  }
+
+  .report-total-box {
+    border: 1px solid #999;
+    background: white;
+  }
+
+  .report-item {
+    border: 1px solid #999;
+  }
+
+  .report-note {
+    background: white;
+    border: 1px solid #ccc;
+  }
+}
+
 @media (max-width: 650px) {
   .page {
     padding: 12px;
@@ -531,6 +705,7 @@ textarea {
     <div id="activeView"></div>
     <div id="menuView" class="hidden"></div>
     <div id="completedView" class="hidden"></div>
+    <div id="reportsView" class="hidden"></div>
     <div id="engineersView" class="hidden"></div>
     <div id="showsView" class="hidden"></div>
 
@@ -556,6 +731,7 @@ let currentShow = null;
 let activeRequests = [];
 let completedRequests = [];
 let requestFilter = "all";
+let reportType = "end";
 
 let realtimeStarted = false;
 let knownRequestIds = new Set();
@@ -566,6 +742,7 @@ const appView = document.getElementById("appView");
 const activeView = document.getElementById("activeView");
 const menuView = document.getElementById("menuView");
 const completedView = document.getElementById("completedView");
+const reportsView = document.getElementById("reportsView");
 const engineersView = document.getElementById("engineersView");
 const showsView = document.getElementById("showsView");
 const modalBackdrop = document.getElementById("modalBackdrop");
@@ -1151,6 +1328,44 @@ function openComplete(id) {
     <textarea id="resolutionNotes"
       placeholder="Example: Replaced bad SDI jumper"></textarea>
 
+    <label style="display:flex;align-items:center;gap:10px;margin-top:16px;">
+      <input
+        id="endOfShowCheck"
+        type="checkbox"
+        style="width:auto;"
+        onchange="toggleEndOfShowCategory()">
+      Add to End-of-Show Report
+    </label>
+
+    <div id="endOfShowCategoryWrap" class="hidden">
+      <label>End-of-Show Category</label>
+
+      <select id="endOfShowCategory">
+        <option value="Repair Needed">Repair Needed</option>
+        <option value="Broken Gear">Broken Gear</option>
+        <option value="Lost / Missing Gear">Lost / Missing Gear</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:10px;margin-top:16px;">
+      <input
+        id="clientReportCheck"
+        type="checkbox"
+        style="width:auto;"
+        onchange="toggleClientReportCategory()">
+      Add to Client Damage / Missing Report
+    </label>
+
+    <div id="clientReportCategoryWrap" class="hidden">
+      <label>Client Report Category</label>
+
+      <select id="clientReportCategory">
+        <option value="Damaged">Damaged</option>
+        <option value="Missing">Missing</option>
+      </select>
+    </div>
+
     <button class="primary full"
       style="margin-top:14px;"
       onclick="completeRequest(${id})">
@@ -1167,10 +1382,44 @@ function openComplete(id) {
   openModal();
 }
 
+function toggleEndOfShowCategory() {
+  const checked =
+    document.getElementById("endOfShowCheck").checked;
+
+  document
+    .getElementById("endOfShowCategoryWrap")
+    .classList.toggle("hidden", !checked);
+}
+
+function toggleClientReportCategory() {
+  const checked =
+    document.getElementById("clientReportCheck").checked;
+
+  document
+    .getElementById("clientReportCategoryWrap")
+    .classList.toggle("hidden", !checked);
+}
+
 async function completeRequest(id) {
   const notes =
     document.getElementById("resolutionNotes")
       .value.trim();
+
+  const endOfShow =
+    document.getElementById("endOfShowCheck").checked;
+
+  const category =
+    endOfShow
+      ? document.getElementById("endOfShowCategory").value
+      : null;
+
+  const clientReport =
+    document.getElementById("clientReportCheck").checked;
+
+  const clientCategory =
+    clientReport
+      ? document.getElementById("clientReportCategory").value
+      : null;
 
   const { error } = await sb
     .from("Requests")
@@ -1182,7 +1431,11 @@ async function completeRequest(id) {
           ? selectedEngineer.name
           : null,
       resolution_notes:
-        notes || null
+        notes || null,
+      end_of_show_report: endOfShow,
+      end_of_show_category: category,
+      client_report: clientReport,
+      client_report_category: clientCategory
     })
     .eq("id", id);
 
@@ -1212,6 +1465,12 @@ function showMenu() {
         onclick="showCompleted()">
         <strong>Completed</strong>
         <span>Current show history</span>
+      </button>
+
+      <button class="menu-card"
+        onclick="showReports()">
+        <strong>Reports</strong>
+        <span>End-of-show turnover report</span>
       </button>
 
       <button class="menu-card"
@@ -1356,6 +1615,539 @@ function completedCardHtml(r) {
         Completed:
         ${formatDate(r.completed_at)}
       </div>
+
+    </div>
+  `;
+}
+
+
+async function showReports() {
+  hideViews();
+  reportsView.classList.remove("hidden");
+
+  const { data: shows, error } = await sb
+    .from("Shows")
+    .select("*")
+    .order("start_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    reportsView.innerHTML =
+      `<div class="panel">${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  const rows = shows || [];
+
+  reportsView.innerHTML = `
+    <div class="panel report-panel">
+
+      <div class="section-header no-print">
+        <div>
+          <h2 style="margin:0;">Reports</h2>
+          <div style="color:#64748b;">
+            End-of-show turnover reports
+          </div>
+        </div>
+
+        <button class="small-btn"
+          onclick="showMenu()">
+          BACK
+        </button>
+      </div>
+
+      ${
+        rows.length
+        ? `
+          <div class="no-print">
+            <label>Select Show</label>
+
+            <select id="reportShowSelect"
+              onchange="loadSelectedReport(this.value)">
+
+              ${rows.map(s => `
+                <option value="${s.id}">
+                  ${escapeHtml(s.show_name)}
+                  ${s.venue ? " — " + escapeHtml(s.venue) : ""}
+                  ${s.active ? " — ACTIVE" : ""}
+                </option>
+              `).join("")}
+
+            </select>
+
+            <label style="margin-top:16px;">
+              Report Type
+            </label>
+
+            <div class="report-type-tabs">
+              <button
+                id="endReportTab"
+                class="report-type-tab active"
+                onclick="setReportType('end')">
+                END OF SHOW REPORT
+              </button>
+
+              <button
+                id="clientReportTab"
+                class="report-type-tab"
+                onclick="setReportType('client')">
+                CLIENT DAMAGE / MISSING REPORT
+              </button>
+            </div>
+          </div>
+
+          <div id="reportContent"
+            style="margin-top:20px;"></div>
+        `
+        : `<div class="empty">No shows found.</div>`
+      }
+
+    </div>
+  `;
+
+  if (rows.length) {
+    await loadSelectedReport(rows[0].id);
+  }
+}
+
+
+function setReportType(type) {
+  reportType = type;
+
+  const endTab =
+    document.getElementById("endReportTab");
+
+  const clientTab =
+    document.getElementById("clientReportTab");
+
+  if (endTab && clientTab) {
+    endTab.classList.toggle(
+      "active",
+      type === "end"
+    );
+
+    clientTab.classList.toggle(
+      "active",
+      type === "client"
+    );
+  }
+
+  const select =
+    document.getElementById("reportShowSelect");
+
+  if (select) {
+    loadSelectedReport(select.value);
+  }
+}
+
+async function loadSelectedReport(showId) {
+  if (reportType === "client") {
+    await loadClientReport(showId);
+  } else {
+    await loadShowReport(showId);
+  }
+}
+
+async function loadShowReport(showId) {
+  const { data: show, error: showError } = await sb
+    .from("Shows")
+    .select("*")
+    .eq("id", showId)
+    .single();
+
+  if (showError) {
+    document.getElementById("reportContent").innerHTML =
+      `<div class="error">${escapeHtml(showError.message)}</div>`;
+    return;
+  }
+
+  const { data: requests, error: requestError } = await sb
+    .from("Requests")
+    .select("*")
+    .eq("show_id", showId)
+    .order("created_at", { ascending: true });
+
+  if (requestError) {
+    document.getElementById("reportContent").innerHTML =
+      `<div class="error">${escapeHtml(requestError.message)}</div>`;
+    return;
+  }
+
+  const rows = requests || [];
+
+  const total = rows.length;
+  const completed =
+    rows.filter(r => r.status === "complete").length;
+  const outstanding =
+    rows.filter(r => r.status !== "complete").length;
+
+  const endItems =
+    rows.filter(r => r.end_of_show_report);
+
+  const categories = [
+    "Repair Needed",
+    "Broken Gear",
+    "Lost / Missing Gear",
+    "Other"
+  ];
+
+  const content =
+    document.getElementById("reportContent");
+
+  content.innerHTML = `
+    <div class="report-sheet">
+
+      <div class="report-title">
+        TRUCK HELP — END OF SHOW REPORT
+      </div>
+
+      <div class="report-show">
+        ${escapeHtml(show.show_name || "")}
+      </div>
+
+      <div class="report-meta">
+        <div>
+          <strong>Venue:</strong>
+          ${escapeHtml(show.venue || "—")}
+        </div>
+
+        <div>
+          <strong>Start Date:</strong>
+          ${escapeHtml(show.start_date || "—")}
+        </div>
+
+        <div>
+          <strong>Status:</strong>
+          ${show.active ? "Active" : "Closed"}
+        </div>
+
+        <div>
+          <strong>Started By:</strong>
+          ${escapeHtml(show.started_by || "—")}
+        </div>
+
+        <div>
+          <strong>Closed By:</strong>
+          ${escapeHtml(show.closed_by || "—")}
+        </div>
+      </div>
+
+      <div class="report-totals">
+        <div class="report-total-box">
+          <div class="report-total-number">${total}</div>
+          <div class="report-total-label">Total Requests</div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">${completed}</div>
+          <div class="report-total-label">Completed</div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">${outstanding}</div>
+          <div class="report-total-label">Open Requests</div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">${endItems.length}</div>
+          <div class="report-total-label">End-of-Show Items</div>
+        </div>
+      </div>
+
+      <div class="no-print"
+        style="margin:18px 0;">
+        <button class="primary"
+          onclick="window.print()">
+          PRINT REPORT
+        </button>
+      </div>
+
+      ${
+        endItems.length
+        ? categories.map(category => {
+            const items =
+              endItems.filter(
+                r => (r.end_of_show_category || "Other") === category
+              );
+
+            if (!items.length) return "";
+
+            return `
+              <div class="report-category">
+                <h3>${escapeHtml(category)}</h3>
+
+                ${items.map(reportItemHtml).join("")}
+              </div>
+            `;
+          }).join("")
+        : `
+          <div class="report-none">
+            No end-of-show items were recorded for this show.
+          </div>
+        `
+      }
+
+    </div>
+  `;
+}
+
+
+async function loadClientReport(showId) {
+  const content =
+    document.getElementById("reportContent");
+
+  const { data: show, error: showError } = await sb
+    .from("Shows")
+    .select("*")
+    .eq("id", showId)
+    .single();
+
+  if (showError) {
+    content.innerHTML =
+      `<div class="error">${escapeHtml(showError.message)}</div>`;
+    return;
+  }
+
+  const { data: requests, error: requestError } = await sb
+    .from("Requests")
+    .select("*")
+    .eq("show_id", showId)
+    .eq("client_report", true)
+    .order("created_at", { ascending: true });
+
+  if (requestError) {
+    content.innerHTML =
+      `<div class="error">${escapeHtml(requestError.message)}</div>`;
+    return;
+  }
+
+  const rows = requests || [];
+
+  const damaged =
+    rows.filter(
+      r => r.client_report_category === "Damaged"
+    );
+
+  const missing =
+    rows.filter(
+      r => r.client_report_category === "Missing"
+    );
+
+  content.innerHTML = `
+    <div class="report-sheet">
+
+      <div class="report-title">
+        TRUCK HELP — CLIENT DAMAGE / MISSING REPORT
+      </div>
+
+      <div class="report-show">
+        ${escapeHtml(show.show_name || "")}
+      </div>
+
+      <div class="report-meta">
+        <div>
+          <strong>Venue:</strong>
+          ${escapeHtml(show.venue || "—")}
+        </div>
+
+        <div>
+          <strong>Start Date:</strong>
+          ${escapeHtml(show.start_date || "—")}
+        </div>
+
+        <div>
+          <strong>Status:</strong>
+          ${show.active ? "Active" : "Closed"}
+        </div>
+
+        <div>
+          <strong>Started By:</strong>
+          ${escapeHtml(show.started_by || "—")}
+        </div>
+
+        <div>
+          <strong>Closed By:</strong>
+          ${escapeHtml(show.closed_by || "—")}
+        </div>
+      </div>
+
+      <div class="report-totals client-report-totals">
+
+        <div class="report-total-box">
+          <div class="report-total-number">
+            ${rows.length}
+          </div>
+          <div class="report-total-label">
+            Total Client Items
+          </div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">
+            ${damaged.length}
+          </div>
+          <div class="report-total-label">
+            Damaged
+          </div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">
+            ${missing.length}
+          </div>
+          <div class="report-total-label">
+            Missing
+          </div>
+        </div>
+
+      </div>
+
+      <div class="no-print"
+        style="margin:18px 0;">
+        <button class="primary"
+          onclick="window.print()">
+          PRINT REPORT
+        </button>
+      </div>
+
+      ${
+        damaged.length
+        ? `
+          <div class="client-report-category">
+            <h3>DAMAGED</h3>
+
+            ${damaged
+              .map(clientReportItemHtml)
+              .join("")}
+          </div>
+        `
+        : ""
+      }
+
+      ${
+        missing.length
+        ? `
+          <div class="client-report-category">
+            <h3>MISSING</h3>
+
+            ${missing
+              .map(clientReportItemHtml)
+              .join("")}
+          </div>
+        `
+        : ""
+      }
+
+      ${
+        !rows.length
+        ? `
+          <div class="report-none">
+            No client damage or missing items
+            were recorded for this show.
+          </div>
+        `
+        : ""
+      }
+
+    </div>
+  `;
+}
+
+function clientReportItemHtml(r) {
+  return `
+    <div class="report-item">
+
+      <div class="report-item-head">
+        <strong>
+          ${escapeHtml(r.description || "")}
+        </strong>
+      </div>
+
+      <div class="report-item-grid">
+
+        <div>
+          <strong>Department:</strong>
+          ${escapeHtml(r.department || "—")}
+        </div>
+
+        <div>
+          <strong>Location:</strong>
+          ${escapeHtml(r.location || "—")}
+        </div>
+
+        <div>
+          <strong>Requester:</strong>
+          ${escapeHtml(r.requester_name || "—")}
+        </div>
+
+        <div>
+          <strong>Engineer:</strong>
+          ${escapeHtml(
+            r.completed_by ||
+            r.claimed_by ||
+            "—"
+          )}
+        </div>
+
+      </div>
+
+      ${
+        r.resolution_notes
+        ? `
+          <div class="report-note">
+            <strong>Resolution / Notes:</strong>
+            ${escapeHtml(r.resolution_notes)}
+          </div>
+        `
+        : ""
+      }
+
+    </div>
+  `;
+}
+
+function reportItemHtml(r) {
+  return `
+    <div class="report-item">
+
+      <div class="report-item-head">
+        <strong>${escapeHtml(r.description || "")}</strong>
+      </div>
+
+      <div class="report-item-grid">
+
+        <div>
+          <strong>Department:</strong>
+          ${escapeHtml(r.department || "—")}
+        </div>
+
+        <div>
+          <strong>Location:</strong>
+          ${escapeHtml(r.location || "—")}
+        </div>
+
+        <div>
+          <strong>Requester:</strong>
+          ${escapeHtml(r.requester_name || "—")}
+        </div>
+
+        <div>
+          <strong>Engineer:</strong>
+          ${escapeHtml(r.completed_by || r.claimed_by || "—")}
+        </div>
+
+      </div>
+
+      ${
+        r.resolution_notes
+        ? `
+          <div class="report-note">
+            <strong>Resolution / Notes:</strong>
+            ${escapeHtml(r.resolution_notes)}
+          </div>
+        `
+        : ""
+      }
 
     </div>
   `;
@@ -1821,6 +2613,7 @@ function hideViews() {
   activeView.classList.add("hidden");
   menuView.classList.add("hidden");
   completedView.classList.add("hidden");
+  reportsView.classList.add("hidden");
   engineersView.classList.add("hidden");
   showsView.classList.add("hidden");
 }
