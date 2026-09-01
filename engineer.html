@@ -1067,12 +1067,129 @@ function dashboardCablesHtml() {
   `;
 }
 
+
+let dashboardEngineeringLog = [];
+
+async function loadDashboardEngineeringLog() {
+  dashboardEngineeringLog = [];
+
+  if (!currentShow) {
+    return;
+  }
+
+  const { data, error } =
+    await sb
+      .from("Engineering_Log")
+      .select("id, created_at, engineer_name, note, request_id")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+  if (error) {
+    console.error(
+      "Could not load engineering log:",
+      error
+    );
+    return;
+  }
+
+  dashboardEngineeringLog = data || [];
+}
+
+
+function dashboardEngineeringLogHtml() {
+  const entries = dashboardEngineeringLog;
+
+  let body = `
+    <div style="
+      color:#64748b;
+      margin-top:8px;
+    ">
+      No engineering log entries yet.
+    </div>
+  `;
+
+  if (entries.length) {
+    body = entries.map(entry => {
+      const when =
+        new Date(entry.created_at).toLocaleString();
+
+      const linked =
+        entry.request_id
+          ? ` · Request #${entry.request_id}`
+          : "";
+
+      return `
+        <div style="
+          padding:10px 0;
+          border-top:1px solid #e2e8f0;
+        ">
+          <div style="
+            display:flex;
+            justify-content:space-between;
+            gap:12px;
+            flex-wrap:wrap;
+          ">
+            <strong>
+              ${escapeHtml(entry.engineer_name)}
+            </strong>
+
+            <span style="color:#64748b;">
+              ${escapeHtml(when)}
+            </span>
+          </div>
+
+          <div style="
+            margin-top:5px;
+            white-space:pre-wrap;
+          ">
+            ${escapeHtml(entry.note)}
+          </div>
+
+          ${
+            linked
+              ? `<div style="
+                   margin-top:4px;
+                   color:#64748b;
+                 ">
+                   ${escapeHtml(linked)}
+                 </div>`
+              : ""
+          }
+        </div>
+      `;
+    }).join("");
+  }
+
+  return `
+    <div class="panel" style="margin-bottom:16px;">
+      <div style="
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+      ">
+        <strong>RECENT ENGINEERING LOG</strong>
+
+        <button
+          class="small-btn"
+          onclick="showEngineeringLog()">
+          OPEN LOG
+        </button>
+      </div>
+
+      ${body}
+    </div>
+  `;
+}
+
 async function showActive() {
   hideViews();
   activeView.classList.remove("hidden");
 
   await loadCurrentShow();
   await loadDashboardCablesOut();
+  await loadDashboardEngineeringLog();
   await loadRequests();
 }
 
@@ -1145,6 +1262,8 @@ function renderActive() {
     </div>
 
     ${dashboardCablesHtml()}
+
+    ${dashboardEngineeringLogHtml()}
 
     <div class="tabs">
       <button
@@ -2148,6 +2267,16 @@ function showMenu() {
         <strong>Request History</strong>
 
         <span>Search requests across all shows</span>
+
+      </button>
+
+      <button class="menu-card"
+
+        onclick="showEngineeringLog()">
+
+        <strong>Engineering Log / Handoff</strong>
+
+        <span>Show notes and engineer handoff log</span>
 
       </button>
 
@@ -4061,6 +4190,24 @@ async function openPastShow(showId) {
       .eq("show_id", showId)
       .order("created_at", { ascending: true });
 
+  const { data: engineeringLog, error: engineeringLogError } =
+    await sb
+      .from("Engineering_Log")
+      .select("*")
+      .eq("show_id", showId)
+      .order("created_at", { ascending: true });
+
+  if (engineeringLogError) {
+    console.error(
+      "Could not load archived engineering log:",
+      engineeringLogError
+    );
+  }
+
+  const engineeringLogRows =
+    engineeringLog || [];
+
+
   const completed =
     (requests || []).filter(
       r => r.status === "complete"
@@ -4369,6 +4516,72 @@ async function openPastShow(showId) {
           : `
             <div class="empty">
               No completed requests for this show.
+            </div>
+          `
+      }
+
+      <h3 style="margin-top:22px;">
+        Engineering Log / Handoff (${engineeringLogRows.length})
+      </h3>
+
+      ${
+        engineeringLogRows.length
+          ? engineeringLogRows
+              .slice()
+              .sort(
+                (a, b) =>
+                  new Date(a.created_at) -
+                  new Date(b.created_at)
+              )
+              .map(entry => `
+                <div class="completed-card"
+                  style="margin-top:10px;">
+
+                  <div style="
+                    display:flex;
+                    justify-content:space-between;
+                    gap:12px;
+                    flex-wrap:wrap;
+                  ">
+                    <strong>
+                      ${escapeHtml(entry.engineer_name || "")}
+                    </strong>
+
+                    <span style="color:#64748b;">
+                      ${escapeHtml(
+                        new Date(
+                          entry.created_at
+                        ).toLocaleString()
+                      )}
+                    </span>
+                  </div>
+
+                  <div style="
+                    margin-top:8px;
+                    white-space:pre-wrap;
+                  ">
+                    ${escapeHtml(entry.note || "")}
+                  </div>
+
+                  ${
+                    entry.request_id
+                      ? `
+                        <div style="
+                          margin-top:6px;
+                          color:#64748b;
+                        ">
+                          Linked to Request #${entry.request_id}
+                        </div>
+                      `
+                      : ""
+                  }
+
+                </div>
+              `)
+              .join("")
+          : `
+            <div class="empty">
+              No engineering log entries for this show.
             </div>
           `
       }
@@ -4963,6 +5176,269 @@ async function resolveFollowUp(id, returnToCloseout = false) {
 
     await showFollowUps();
   }
+}
+
+
+async function showEngineeringLog() {
+  hideViews();
+  menuView.classList.remove("hidden");
+
+  await loadCurrentShow();
+
+  if (!currentShow) {
+    menuView.innerHTML = `
+      <div class="panel">
+        <div class="section-header">
+          <div>
+            <h2 style="margin:0;">
+              Engineering Log / Handoff
+            </h2>
+            <div style="color:#64748b;">
+              No active show
+            </div>
+          </div>
+
+          <button class="small-btn"
+            onclick="showMenu()">
+            BACK
+          </button>
+        </div>
+
+        <div style="margin-top:18px;">
+          Engineering Log is available when a show is active.
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  menuView.innerHTML = `
+    <div class="panel">
+      <div class="section-header">
+        <div>
+          <h2 style="margin:0;">
+            Engineering Log / Handoff
+          </h2>
+
+          <div style="color:#64748b;">
+            ${escapeHtml(currentShow.show_name || "")}
+          </div>
+        </div>
+
+        <button class="small-btn"
+          onclick="showMenu()">
+          BACK
+        </button>
+      </div>
+
+      <div style="margin-top:20px;">
+        <label>
+          New Log Entry
+        </label>
+
+        <textarea
+          id="engineeringLogNote"
+          rows="4"
+          placeholder="Enter show note or handoff information..."
+        ></textarea>
+
+        <label style="margin-top:12px;">
+          Link to Help Request
+        </label>
+
+        <select id="engineeringLogRequest">
+          <option value="">
+            No linked request
+          </option>
+        </select>
+
+        <button
+          class="primary-btn"
+          style="margin-top:14px;"
+          onclick="addEngineeringLogEntry()">
+          ADD LOG ENTRY
+        </button>
+      </div>
+
+      <div
+        id="engineeringLogEntries"
+        style="margin-top:24px;">
+        Loading log...
+      </div>
+    </div>
+  `;
+
+  await loadEngineeringLogRequestChoices();
+  await loadEngineeringLogEntries();
+}
+
+
+async function loadEngineeringLogRequestChoices() {
+  const select =
+    document.getElementById("engineeringLogRequest");
+
+  if (!select || !currentShow) {
+    return;
+  }
+
+  const { data, error } =
+    await sb
+      .from("Requests")
+      .select("id, requester_name, description, status")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  for (const request of data || []) {
+    const option = document.createElement("option");
+
+    option.value = request.id;
+
+    option.textContent =
+      `Request #${request.id} — ` +
+      `${request.requester_name || "Unknown"} — ` +
+      `${request.description || ""}`;
+
+    select.appendChild(option);
+  }
+}
+
+
+async function loadEngineeringLogEntries() {
+  const container =
+    document.getElementById("engineeringLogEntries");
+
+  if (!container || !currentShow) {
+    return;
+  }
+
+  const { data, error } =
+    await sb
+      .from("Engineering_Log")
+      .select("*")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(error);
+
+    container.innerHTML = `
+      <div class="error">
+        ${escapeHtml(error.message)}
+      </div>
+    `;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    container.innerHTML = `
+      <div style="color:#64748b;">
+        No engineering log entries yet.
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = data.map(entry => {
+    const when =
+      new Date(entry.created_at).toLocaleString();
+
+    const linked =
+      entry.request_id
+        ? `<div style="margin-top:6px;color:#64748b;">
+             Linked to Request #${entry.request_id}
+           </div>`
+        : "";
+
+    return `
+      <div class="request-card"
+        style="margin-bottom:12px;">
+
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          gap:12px;
+          flex-wrap:wrap;
+        ">
+          <strong>
+            ${escapeHtml(entry.engineer_name)}
+          </strong>
+
+          <span style="color:#64748b;">
+            ${escapeHtml(when)}
+          </span>
+        </div>
+
+        <div style="
+          margin-top:10px;
+          white-space:pre-wrap;
+        ">
+          ${escapeHtml(entry.note)}
+        </div>
+
+        ${linked}
+      </div>
+    `;
+  }).join("");
+}
+
+
+async function addEngineeringLogEntry() {
+  if (!currentShow) {
+    return;
+  }
+
+  if (!selectedEngineer) {
+    alert("Select an engineer first.");
+    return;
+  }
+
+  const noteInput =
+    document.getElementById("engineeringLogNote");
+
+  const requestSelect =
+    document.getElementById("engineeringLogRequest");
+
+  const note =
+    noteInput?.value.trim() || "";
+
+  if (!note) {
+    alert("Enter a log note.");
+    return;
+  }
+
+  const requestId =
+    requestSelect?.value
+      ? Number(requestSelect.value)
+      : null;
+
+  const { error } =
+    await sb
+      .from("Engineering_Log")
+      .insert({
+        show_id: currentShow.id,
+        request_id: requestId,
+        engineer_name: selectedEngineer.name,
+        note
+      });
+
+  if (error) {
+    console.error(error);
+    alert("Could not add engineering log entry.");
+    return;
+  }
+
+  noteInput.value = "";
+
+  if (requestSelect) {
+    requestSelect.value = "";
+  }
+
+  await loadEngineeringLogEntries();
 }
 
 async function showFollowUps() {
