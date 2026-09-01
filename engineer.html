@@ -1214,6 +1214,11 @@ function renderActive() {
     return;
   }
 
+  const newCount =
+    activeRequests.filter(
+      r => r.status === "new"
+    ).length;
+
   const inProgressCount =
     activeRequests.filter(
       r => r.status === "in-progress"
@@ -1240,9 +1245,9 @@ function renderActive() {
       <div class="tally">
         <div class="tally-box">
           <div class="tally-number">
-            ${activeRequests.length}
+            ${newCount}
           </div>
-          <div class="tally-label">Active</div>
+          <div class="tally-label">New</div>
         </div>
 
         <div class="tally-box">
@@ -7343,12 +7348,36 @@ async function showShowCloseout() {
 
 
   // ------------------------------------------------
+  // CABLES STILL OUT
+  // ------------------------------------------------
+
+  const { data: closeoutCables, error: cableError } =
+    await sb
+      .from("Cable_Checkouts")
+      .select("id, cable_type, cable_length, created_at")
+      .eq("action", "TAKE")
+      .is("returned_at", null)
+      .order("created_at", { ascending:true });
+
+  if (cableError) {
+    console.error(
+      "Closeout cable audit failed:",
+      cableError
+    );
+  }
+
+  const cablesStillOut =
+    cableError ? [] : (closeoutCables || []);
+
+
+  // ------------------------------------------------
   // CLEAN / WARNING STATE
   // ------------------------------------------------
 
   const hasOutstanding =
     openRequests.length > 0 ||
-    openFollowUps.length > 0;
+    openFollowUps.length > 0 ||
+    cablesStillOut.length > 0;
 
 
   // ------------------------------------------------
@@ -7469,7 +7498,7 @@ async function showShowCloseout() {
               font-weight:800;
             ">
               Engineering closeout is clean.
-              No active requests or open follow-ups remain.
+              No active requests, open follow-ups, or cables out remain.
             </div>
           `
       }
@@ -7506,6 +7535,12 @@ async function showShowCloseout() {
           "Open Follow-Ups",
           openFollowUps.length,
           openFollowUps.length > 0
+        )}
+
+        ${closeoutAuditBox(
+          "Cables Still Out",
+          cablesStillOut.length,
+          cablesStillOut.length > 0
         )}
 
         ${closeoutAuditBox(
@@ -7657,6 +7692,40 @@ async function showShowCloseout() {
 
             `).join("")}
 
+          `
+          : ""
+      }
+
+
+      ${
+        cablesStillOut.length
+          ? `
+            <h3 style="margin-top:26px;">
+              Cables Still Out (${cablesStillOut.length})
+            </h3>
+
+            ${cablesStillOut.map(c => {
+              const when =
+                new Date(c.created_at).toLocaleString();
+
+              return `
+                <div class="completed-card"
+                  style="margin-top:8px;">
+                  <strong>
+                    ${escapeHtml(c.cable_type || "Cable")}
+                    — ${escapeHtml(c.cable_length || "—")}
+                  </strong>
+
+                  <div style="
+                    color:#64748b;
+                    font-size:13px;
+                    margin-top:4px;
+                  ">
+                    Taken ${escapeHtml(when)}
+                  </div>
+                </div>
+              `;
+            }).join("")}
           `
           : ""
       }
