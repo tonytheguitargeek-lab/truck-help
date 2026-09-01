@@ -1355,7 +1355,7 @@ function requestCardHtml(r) {
   return `
     <div class="${classes}">
       <div class="status-bar">
-        ${statusText}
+        ${statusText} · Request #${escapeHtml(String(r.id))}
       </div>
 
       <div class="request-body">
@@ -4717,6 +4717,9 @@ function completedCardHtml(r) {
 
       <div class="request-name">
         ${escapeHtml(r.requester_name || "")}
+        <span style="font-size:13px; color:#64748b; font-weight:600;">
+          · Request #${escapeHtml(String(r.id))}
+        </span>
       </div>
 
       <div class="badges">
