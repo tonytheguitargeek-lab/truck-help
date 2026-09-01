@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>Truck Help - QR Codes / Signage</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <style>
+    body {
+      background:#071729;
+      margin:0;
+    }
+
+    .signage-wrap {
+      max-width:1100px;
+      margin:0 auto;
+      padding:24px;
+    }
+
+    .signage-header {
+      background:white;
+      border-radius:12px;
+      padding:18px;
+      margin-bottom:18px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+    }
+
+    .signage-grid {
+      display:grid;
+      grid-template-columns:
+        repeat(auto-fit,minmax(320px,1fr));
+      gap:18px;
+    }
+
+    .sign-card {
+      background:white;
+      border-radius:12px;
+      padding:18px;
+    }
+
+    .sign-preview {
+      border:2px solid #cbd5e1;
+      border-radius:10px;
+      min-height:360px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding:22px;
+      margin-bottom:14px;
+      background:white;
+    }
+
+    .sign-preview h2 {
+      font-size:30px;
+      margin:0 0 10px;
+    }
+
+    .sign-preview p {
+      font-size:18px;
+      color:#475569;
+    }
+
+    .print-btn {
+      width:100%;
+      padding:14px;
+      border:0;
+      border-radius:8px;
+      background:#2563eb;
+      color:white;
+      font-weight:800;
+      cursor:pointer;
+    }
+
+    .back-btn {
+      padding:10px 14px;
+      border:0;
+      border-radius:8px;
+      font-weight:800;
+      cursor:pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="signage-wrap">
+
+    <div class="signage-header">
+      <div>
+        <h1 style="margin:0;">
+          QR Codes / Signage
+        </h1>
+
+        <div style="color:#64748b;margin-top:4px;">
+          Printable Truck Help signs
+        </div>
+      </div>
+
+      <button
+        class="back-btn"
+        onclick="window.location.href='engineer.html'">
+        BACK TO ENGINEERING
+      </button>
+    </div>
+
+    <div class="signage-grid">
+
+      <div class="sign-card">
+        <div class="sign-preview" id="helpSign">
+          <div>
+            <h2>ENGINEERING HELP REQUEST</h2>
+
+            <div id="helpQr"
+              style="
+                display:flex;
+                justify-content:center;
+                margin:22px 0;
+              ">
+            </div>
+
+            <p>
+              Scan to request Engineering assistance
+            </p>
+          </div>
+        </div>
+
+        <button class="print-btn"
+          onclick="printSign('help')">
+          PRINT SIGN
+        </button>
+      </div>
+
+
+      <div class="sign-card">
+        <div class="sign-preview" id="cableSign">
+          <div>
+            <h2>CABLE CHECKOUT</h2>
+
+            <div style="
+              font-size:22px;
+              font-weight:800;
+              margin-top:6px;
+            ">
+              TRIAX / TAC-12
+            </div>
+
+            <div id="cableQr"
+              style="
+                display:flex;
+                justify-content:center;
+                margin:22px 0;
+              ">
+            </div>
+
+            <p>
+              Scan to take or return cable
+            </p>
+          </div>
+        </div>
+
+        <button class="print-btn"
+          onclick="printSign('cable')">
+          PRINT SIGN
+        </button>
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <script src="qrcode.min.js"></script>
+
+  <script>
+    const helpUrl =
+      "https://tonytheguitargeek-lab.github.io/truck-help/";
+
+    const cableUrl =
+      "https://tonytheguitargeek-lab.github.io/truck-help/cables.html";
+
+    new QRCode(
+      document.getElementById("helpQr"),
+      {
+        text: helpUrl,
+        width: 190,
+        height: 190
+      }
+    );
+
+    new QRCode(
+      document.getElementById("cableQr"),
+      {
+        text: cableUrl,
+        width: 190,
+        height: 190
+      }
+    );
+
+    function printSign(type) {
+      const source =
+        type === "help"
+          ? document.getElementById("helpSign")
+          : document.getElementById("cableSign");
+
+      if (!source) {
+        return;
+      }
+
+      const printWindow =
+        window.open("", "_blank");
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Truck Help Sign</title>
+
+          <style>
+            @page {
+              size: letter portrait;
+              margin: 0.35in;
+            }
+
+            body {
+              margin:0;
+              font-family:
+                Arial,
+                Helvetica,
+                sans-serif;
+              color:#111827;
+            }
+
+            .page {
+              width:100%;
+              min-height:10in;
+              box-sizing:border-box;
+              border:3px solid #111827;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              text-align:center;
+              padding:0.45in;
+            }
+
+            h2 {
+              font-size:38px;
+              margin:0 0 16px;
+            }
+
+            p {
+              font-size:24px;
+              margin:16px 0;
+            }
+
+            img,
+            canvas {
+              width:3.2in !important;
+              height:3.2in !important;
+            }
+
+            div {
+              box-sizing:border-box;
+            }
+          </style>
+        </head>
+
+        <body>
+          <div class="page">
+            ${source.innerHTML}
+          </div>
+        </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+
+      setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 300);
+    }
+  </script>
+
+</body>
+</html>
