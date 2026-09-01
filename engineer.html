@@ -945,11 +945,134 @@ function sortActiveRequests(rows) {
   });
 }
 
+let dashboardCablesOut = [];
+
+async function loadDashboardCablesOut() {
+  const { data, error } = await sb
+    .from("Cable_Checkouts")
+    .select("id, person_name, cable_type, cable_length, created_at")
+    .eq("action", "TAKE")
+    .is("returned_at", null)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Could not load cables out:", error);
+    dashboardCablesOut = [];
+    return;
+  }
+
+  dashboardCablesOut = data || [];
+}
+
+function dashboardCablesHtml() {
+  if (!dashboardCablesOut.length) {
+    return `
+      <div class="panel" style="margin-bottom:16px;">
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          align-items:center;
+          gap:12px;
+        ">
+          <strong>CABLES OUT</strong>
+          <span style="color:#64748b;">0</span>
+        </div>
+
+        <div style="
+          color:#64748b;
+          margin-top:8px;
+        ">
+          No TRIAX or TAC-12 currently out.
+        </div>
+      </div>
+    `;
+  }
+
+  const triax =
+    dashboardCablesOut.filter(
+      row => row.cable_type === "TRIAX"
+    );
+
+  const tac12 =
+    dashboardCablesOut.filter(
+      row => row.cable_type === "TAC-12"
+    );
+
+  function group(title, rows) {
+    if (!rows.length) {
+      return "";
+    }
+
+    return `
+      <div style="margin-top:12px;">
+        <div style="
+          font-weight:bold;
+          margin-bottom:6px;
+        ">
+          ${title} — ${rows.length}
+        </div>
+
+        ${rows.map(row => {
+          const time =
+            new Date(row.created_at)
+              .toLocaleTimeString(
+                [],
+                {
+                  hour: "numeric",
+                  minute: "2-digit"
+                }
+              );
+
+          return `
+            <div style="
+              padding:7px 0;
+              border-top:1px solid #334155;
+            ">
+              <strong>
+                ${escapeHtml(row.cable_length || "")}
+              </strong>
+
+              <span style="color:#94a3b8;">
+                · ${escapeHtml(row.person_name || "")}
+                · ${escapeHtml(time)}
+              </span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  return `
+    <div class="panel" style="margin-bottom:16px;">
+      <div style="
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+      ">
+        <strong>CABLES OUT</strong>
+
+        <span style="
+          font-size:22px;
+          font-weight:bold;
+        ">
+          ${dashboardCablesOut.length}
+        </span>
+      </div>
+
+      ${group("TRIAX", triax)}
+      ${group("TAC-12", tac12)}
+    </div>
+  `;
+}
+
 async function showActive() {
   hideViews();
   activeView.classList.remove("hidden");
 
   await loadCurrentShow();
+  await loadDashboardCablesOut();
   await loadRequests();
 }
 
@@ -1020,6 +1143,8 @@ function renderActive() {
         </div>
       </div>
     </div>
+
+    ${dashboardCablesHtml()}
 
     <div class="tabs">
       <button
@@ -7356,6 +7481,26 @@ function startRealtime() {
         }
 
         await loadRequests();
+      }
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "Cable_Checkouts"
+      },
+      async payload => {
+        console.log(
+          "Cable realtime update:",
+          payload.eventType
+        );
+
+        await loadDashboardCablesOut();
+
+        if (!activeView.classList.contains("hidden")) {
+          renderActive();
+        }
       }
     )
     .subscribe();
