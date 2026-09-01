@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Cable Checkout</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 20px;
+  background: #071426;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+.container {
+  max-width: 520px;
+  margin: auto;
+}
+
+h1 {
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  margin-top: 0;
+  color: #aeb8c5;
+}
+
+.section {
+  background: #101f32;
+  border: 1px solid #40536a;
+  border-radius: 10px;
+  padding: 18px;
+  margin-top: 22px;
+}
+
+h2 {
+  margin-top: 0;
+}
+
+label {
+  display: block;
+  margin-top: 15px;
+  margin-bottom: 6px;
+  font-weight: bold;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid #526173;
+  border-radius: 7px;
+  background: #071426;
+  color: white;
+  font-size: 17px;
+}
+
+button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 15px;
+  border: 0;
+  border-radius: 7px;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.take-btn {
+  background: #1473e6;
+  color: white;
+}
+
+.return-btn {
+  background: #1f9d55;
+  color: white;
+}
+
+.cable-group {
+  margin-top: 18px;
+}
+
+.cable-group-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.cable-row {
+  padding: 10px 0;
+  border-bottom: 1px solid #34465c;
+}
+
+.cable-main {
+  font-weight: bold;
+}
+
+.cable-detail {
+  color: #aeb8c5;
+  margin-top: 3px;
+  font-size: 14px;
+}
+
+.empty {
+  color: #aeb8c5;
+}
+
+#message {
+  display: none;
+  margin-top: 20px;
+  padding: 14px;
+  border-radius: 7px;
+}
+
+.success {
+  display: block !important;
+  background: #123d28;
+}
+
+.error {
+  display: block !important;
+  background: #5b2020;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>Cable Checkout</h1>
+<p class="subtitle">Engineering Cable Storage</p>
+
+
+<div class="section">
+
+<h2>Take Cable</h2>
+
+<label>Your Name</label>
+<input id="personName" type="text" placeholder="Name">
+
+<label>Cable Type</label>
+<select id="cableType" onchange="updateLengths()">
+  <option value="TRIAX">TRIAX</option>
+  <option value="TAC-12">TAC-12</option>
+</select>
+
+<label>Length</label>
+<select id="cableLength"></select>
+
+<button class="take-btn" onclick="takeCable()">
+  TAKE CABLE
+</button>
+
+</div>
+
+
+<div class="section">
+
+<h2>Currently Out</h2>
+
+<div id="outList">
+  Loading...
+</div>
+
+</div>
+
+
+<div class="section">
+
+<h2>Return Cable</h2>
+
+<label>Select Cable</label>
+
+<select id="returnCable">
+  <option value="">Loading...</option>
+</select>
+
+<button class="return-btn" onclick="returnCable()">
+  RETURN CABLE
+</button>
+
+</div>
+
+
+<div id="message"></div>
+
+</div>
+
+
+<script>
+
+const SUPABASE_URL =
+  "https://cnqeqehgpidrsuerjzbg.supabase.co";
+
+const SUPABASE_KEY =
+  "sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
+
+const sb = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
+
+const lengths = {
+  "TRIAX": [
+    "100 ft",
+    "250 ft",
+    "500 ft"
+  ],
+
+  "TAC-12": [
+    "100 ft",
+    "250 ft",
+    "500 ft",
+    "1000 ft"
+  ]
+};
+
+
+let openCables = [];
+
+
+function updateLengths() {
+
+  const type =
+    document.getElementById("cableType").value;
+
+  const select =
+    document.getElementById("cableLength");
+
+  select.innerHTML =
+    lengths[type]
+      .map(length =>
+        `<option value="${length}">
+          ${length}
+        </option>`
+      )
+      .join("");
+}
+
+
+function showMessage(text, type) {
+
+  const box =
+    document.getElementById("message");
+
+  box.textContent = text;
+  box.className = type;
+}
+
+
+async function loadOpenCables() {
+
+  const outList =
+    document.getElementById("outList");
+
+  const returnSelect =
+    document.getElementById("returnCable");
+
+  const { data, error } = await sb
+    .from("Cable_Checkouts")
+    .select(
+      "id, person_name, cable_type, cable_length, created_at"
+    )
+    .eq("action", "TAKE")
+    .is("returned_at", null)
+    .order("created_at", {
+      ascending: true
+    });
+
+  if (error) {
+
+    outList.innerHTML =
+      '<div class="empty">Could not load cables.</div>';
+
+    returnSelect.innerHTML =
+      '<option value="">Could not load cables</option>';
+
+    return;
+  }
+
+
+  openCables = data || [];
+
+
+  returnSelect.innerHTML =
+    '<option value="">Select cable...</option>' +
+
+    openCables.map(row =>
+
+      `<option value="${row.id}">
+        ${row.cable_type} — ${row.cable_length} — ${row.person_name}
+      </option>`
+
+    ).join("");
+
+
+  if (openCables.length === 0) {
+
+    outList.innerHTML =
+      '<div class="empty">No cables currently out.</div>';
+
+    return;
+  }
+
+
+  const triax =
+    openCables.filter(
+      row => row.cable_type === "TRIAX"
+    );
+
+  const tac12 =
+    openCables.filter(
+      row => row.cable_type === "TAC-12"
+    );
+
+
+  function groupHTML(title, rows) {
+
+    if (!rows.length) {
+
+      return `
+        <div class="cable-group">
+
+          <div class="cable-group-title">
+            ${title}
+          </div>
+
+          <div class="empty">
+            None out
+          </div>
+
+        </div>
+      `;
+    }
+
+
+    return `
+      <div class="cable-group">
+
+        <div class="cable-group-title">
+          ${title} OUT — ${rows.length}
+        </div>
+
+        ${rows.map(row => {
+
+          const time =
+            new Date(
+              row.created_at
+            ).toLocaleTimeString(
+              [],
+              {
+                hour: "numeric",
+                minute: "2-digit"
+              }
+            );
+
+          return `
+            <div class="cable-row">
+
+              <div class="cable-main">
+                ${row.cable_length}
+              </div>
+
+              <div class="cable-detail">
+                ${row.person_name} · ${time}
+              </div>
+
+            </div>
+          `;
+
+        }).join("")}
+
+      </div>
+    `;
+  }
+
+
+  outList.innerHTML =
+    groupHTML("TRIAX", triax) +
+    groupHTML("TAC-12", tac12);
+}
+
+
+async function takeCable() {
+
+  const person =
+    document
+      .getElementById("personName")
+      .value
+      .trim();
+
+  const type =
+    document
+      .getElementById("cableType")
+      .value;
+
+  const length =
+    document
+      .getElementById("cableLength")
+      .value;
+
+
+  if (!person) {
+
+    showMessage(
+      "Enter your name.",
+      "error"
+    );
+
+    return;
+  }
+
+
+  const { error } = await sb
+    .from("Cable_Checkouts")
+    .insert({
+      person_name: person,
+      cable_type: type,
+      cable_length: length,
+      action: "TAKE"
+    });
+
+
+  if (error) {
+
+    showMessage(
+      "Could not check out cable: " +
+      error.message,
+      "error"
+    );
+
+    return;
+  }
+
+
+  localStorage.setItem(
+    "truckHelpCableName",
+    person
+  );
+
+
+  showMessage(
+    type + " " + length + " checked out.",
+    "success"
+  );
+
+
+  await loadOpenCables();
+}
+
+
+async function returnCable() {
+
+  const id =
+    document
+      .getElementById("returnCable")
+      .value;
+
+  const person =
+    document
+      .getElementById("personName")
+      .value
+      .trim();
+
+
+  if (!id) {
+
+    showMessage(
+      "Select a cable to return.",
+      "error"
+    );
+
+    return;
+  }
+
+
+  if (!person) {
+
+    showMessage(
+      "Enter your name.",
+      "error"
+    );
+
+    return;
+  }
+
+
+  const { data, error } =
+    await sb.rpc(
+      "return_cable_checkout",
+      {
+        p_checkout_id:
+          Number(id),
+
+        p_returned_by:
+          person
+      }
+    );
+
+
+  if (error) {
+
+    showMessage(
+      "Could not return cable: " +
+      error.message,
+      "error"
+    );
+
+    return;
+  }
+
+
+  if (data !== true) {
+
+    showMessage(
+      "That cable could not be returned. Reload the page and try again.",
+      "error"
+    );
+
+    await loadOpenCables();
+
+    return;
+  }
+
+
+  showMessage(
+    "Cable returned.",
+    "success"
+  );
+
+
+  await loadOpenCables();
+}
+
+
+updateLengths();
+
+
+const savedName =
+  localStorage.getItem(
+    "truckHelpCableName"
+  );
+
+
+if (savedName) {
+
+  document
+    .getElementById("personName")
+    .value =
+      savedName;
+}
+
+
+loadOpenCables();
+
+</script>
+
+</body>
+</html>
