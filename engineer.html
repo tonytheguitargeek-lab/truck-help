@@ -4021,6 +4021,165 @@ async function openPastShow(showId) {
             : ""
         }
 
+      ${
+        show.closed_at ||
+        show.closeout_total_requests !== null ||
+        show.closeout_notes
+          ? `
+
+            <h3 style="margin-top:22px;">
+              Closeout Summary
+            </h3>
+
+            <div style="
+              padding:14px;
+              border:1px solid #cbd5e1;
+              border-radius:10px;
+              background:#f8fafc;
+            ">
+
+              <div style="
+                display:grid;
+                grid-template-columns:
+                  repeat(auto-fit,minmax(150px,1fr));
+                gap:10px;
+              ">
+
+                ${
+                  show.closed_by
+                    ? `
+                      <div>
+                        <strong>Closed By</strong><br>
+                        ${escapeHtml(show.closed_by)}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closed_at
+                    ? `
+                      <div>
+                        <strong>Closed At</strong><br>
+                        ${escapeHtml(
+                          new Date(
+                            show.closed_at
+                          ).toLocaleString()
+                        )}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closeout_total_requests !== null
+                    ? `
+                      <div>
+                        <strong>Total Requests</strong><br>
+                        ${show.closeout_total_requests}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closeout_completed_requests !== null
+                    ? `
+                      <div>
+                        <strong>Completed</strong><br>
+                        ${show.closeout_completed_requests}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closeout_open_requests !== null
+                    ? `
+                      <div>
+                        <strong>Open at Close</strong><br>
+                        ${show.closeout_open_requests}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closeout_total_followups !== null
+                    ? `
+                      <div>
+                        <strong>Total Follow-Ups</strong><br>
+                        ${show.closeout_total_followups}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closeout_open_followups !== null
+                    ? `
+                      <div>
+                        <strong>Open Follow-Ups at Close</strong><br>
+                        ${show.closeout_open_followups}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closeout_end_report_items !== null
+                    ? `
+                      <div>
+                        <strong>End-of-Show Items</strong><br>
+                        ${show.closeout_end_report_items}
+                      </div>
+                    `
+                    : ""
+                }
+
+                ${
+                  show.closeout_client_items !== null
+                    ? `
+                      <div>
+                        <strong>Client Damage / Missing</strong><br>
+                        ${show.closeout_client_items}
+                      </div>
+                    `
+                    : ""
+                }
+
+              </div>
+
+              ${
+                show.closeout_notes
+                  ? `
+                    <div style="
+                      margin-top:14px;
+                      padding-top:12px;
+                      border-top:1px solid #cbd5e1;
+                    ">
+
+                      <strong>Closeout Notes</strong>
+
+                      <div style="
+                        margin-top:5px;
+                        white-space:pre-wrap;
+                      ">
+                        ${escapeHtml(show.closeout_notes)}
+                      </div>
+
+                    </div>
+                  `
+                  : ""
+              }
+
+            </div>
+
+          `
+          : ""
+      }
+
+
       </div>
 
       <div style="
@@ -4540,7 +4699,101 @@ function setFollowUpViewStatus(status) {
 
 }
 
-async function resolveFollowUp(id) {
+
+async function openCloseoutFollowUp(id) {
+
+  const { data: followUp, error } =
+    await sb
+      .from("Follow_Ups")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  modal.innerHTML = `
+
+    <h2 style="margin-top:0;">
+      Follow-Up
+    </h2>
+
+    <div class="completed-card">
+
+      <div style="
+        font-size:18px;
+        font-weight:900;
+      ">
+        ${escapeHtml(
+          followUp.title || "Follow-Up"
+        )}
+      </div>
+
+      <div style="
+        color:#64748b;
+        margin-top:5px;
+      ">
+        ${escapeHtml(
+          followUp.category || "—"
+        )}
+      </div>
+
+      ${
+        followUp.next_action
+          ? `
+            <div style="margin-top:14px;">
+              <strong>Next Action</strong><br>
+              ${escapeHtml(followUp.next_action)}
+            </div>
+          `
+          : ""
+      }
+
+      ${
+        followUp.created_by
+          ? `
+            <div style="
+              margin-top:14px;
+              font-size:13px;
+              color:#64748b;
+            ">
+              Created by
+              ${escapeHtml(followUp.created_by)}
+            </div>
+          `
+          : ""
+      }
+
+    </div>
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="
+        resolveFollowUp(
+          ${followUp.id},
+          true
+        )
+      ">
+      RESOLVE FOLLOW-UP
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+
+  `;
+
+  openModal();
+}
+
+
+async function resolveFollowUp(id, returnToCloseout = false) {
 
   const resolution = prompt(
     "Resolution:"
@@ -4575,7 +4828,16 @@ async function resolveFollowUp(id) {
     return;
   }
 
-  await showFollowUps();
+  if (returnToCloseout) {
+
+    closeModal();
+
+    await showShowCloseout();
+
+  } else {
+
+    await showFollowUps();
+  }
 }
 
 async function showFollowUps() {
@@ -6305,86 +6567,761 @@ async function startShow() {
 
 async function confirmCloseShow() {
 
-  await loadRequests();
+  await showShowCloseout();
+}
 
-  const requestCount =
-    activeRequests.length;
+
+async function showShowCloseout() {
+
+  if (!currentShow) {
+    alert("There is no active show.");
+    return;
+  }
+
+  hideViews();
+  showsView.classList.remove("hidden");
+
+  showsView.innerHTML = `
+    <div class="panel">
+      <div class="empty">
+        Loading show closeout...
+      </div>
+    </div>
+  `;
+
+
+  // ------------------------------------------------
+  // REQUESTS
+  // ------------------------------------------------
+
+  const { data: requests, error: requestError } =
+    await sb
+      .from("Requests")
+      .select("*")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending:true });
+
+  if (requestError) {
+    showsView.innerHTML =
+      `<div class="panel">
+        <div class="error">
+          ${escapeHtml(requestError.message)}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const requestRows = requests || [];
+
+  const openRequests =
+    requestRows.filter(
+      r => r.status !== "complete"
+    );
+
+  const completedCount =
+    requestRows.filter(
+      r => r.status === "complete"
+    ).length;
+
+  const endReportItems =
+    requestRows.filter(
+      r => r.end_of_show_report
+    );
+
+  const clientItems =
+    requestRows.filter(
+      r => r.client_report
+    );
+
+
+  // ------------------------------------------------
+  // FOLLOW-UPS
+  // ------------------------------------------------
 
   const { data: followUps, error: followUpError } =
     await sb
       .from("Follow_Ups")
-      .select("id")
+      .select("*")
       .eq("show_id", currentShow.id)
-      .eq("status", "open");
+      .order("created_at", { ascending:true });
+
+  if (followUpError) {
+    showsView.innerHTML =
+      `<div class="panel">
+        <div class="error">
+          ${escapeHtml(followUpError.message)}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const followUpRows = followUps || [];
+
+  const openFollowUps =
+    followUpRows.filter(
+      f => f.status === "open"
+    );
+
+
+  // ------------------------------------------------
+  // PHOTOS
+  // ------------------------------------------------
+
+  const requestIds =
+    requestRows.map(r => r.id);
+
+  let photoRows = [];
+
+  if (requestIds.length) {
+
+    const { data: photos, error: photoError } =
+      await sb
+        .from("Request_Photos")
+        .select("id, request_id")
+        .in("request_id", requestIds);
+
+    if (photoError) {
+      console.error(
+        "Closeout photo audit failed:",
+        photoError
+      );
+    } else {
+      photoRows = photos || [];
+    }
+  }
+
+  const photoRequestIds =
+    new Set(
+      photoRows.map(p => p.request_id)
+    );
+
+  const clientItemsWithoutPhotos =
+    clientItems.filter(
+      r => !photoRequestIds.has(r.id)
+    );
+
+
+  // ------------------------------------------------
+  // ENGINEERING CREW
+  // ------------------------------------------------
+
+  const { data: assignments, error: crewError } =
+    await sb
+      .from("Show_Engineers")
+      .select(`
+        sort_order,
+        Engineers (
+          name,
+          role
+        )
+      `)
+      .eq("show_id", currentShow.id)
+      .order("sort_order", { ascending:true });
+
+  let crew = [];
+
+  if (!crewError) {
+
+    crew =
+      (assignments || [])
+        .map(row => row.Engineers)
+        .filter(Boolean);
+  }
+
+
+  // ------------------------------------------------
+  // CLEAN / WARNING STATE
+  // ------------------------------------------------
+
+  const hasOutstanding =
+    openRequests.length > 0 ||
+    openFollowUps.length > 0;
+
+
+  // ------------------------------------------------
+  // RENDER
+  // ------------------------------------------------
+
+  showsView.innerHTML = `
+
+    <div class="panel">
+
+      <div class="section-header">
+
+        <div>
+          <h2 style="margin:0;">
+            Show Closeout
+          </h2>
+
+          <div style="
+            color:#64748b;
+            margin-top:4px;
+          ">
+            ${escapeHtml(currentShow.show_name || "")}
+            ${
+              currentShow.show_number
+                ? ` · ${escapeHtml(currentShow.show_number)}`
+                : ""
+            }
+          </div>
+        </div>
+
+        <button
+          class="small-btn"
+          onclick="showShows()">
+          BACK
+        </button>
+
+      </div>
+
+
+      <div class="completed-card"
+        style="margin-top:18px;">
+
+        <div style="
+          display:grid;
+          grid-template-columns:
+            repeat(auto-fit,minmax(180px,1fr));
+          gap:12px;
+        ">
+
+          <div>
+            <strong>Venue</strong><br>
+            ${escapeHtml(currentShow.venue || "—")}
+          </div>
+
+          <div>
+            <strong>MU / Main Unit</strong><br>
+            ${escapeHtml(currentShow.main_unit || "—")}
+          </div>
+
+          <div>
+            <strong>Client / Network</strong><br>
+            ${escapeHtml(currentShow.client_network || "—")}
+          </div>
+
+          <div>
+            <strong>Start Date</strong><br>
+            ${escapeHtml(currentShow.start_date || "—")}
+          </div>
+
+        </div>
+
+        ${
+          crew.length
+            ? `
+              <div style="margin-top:14px;">
+                <strong>Engineering Crew</strong><br>
+
+                ${crew.map(e =>
+                  `${escapeHtml(e.name || "")}${
+                    e.role
+                      ? ` — ${escapeHtml(e.role)}`
+                      : ""
+                  }`
+                ).join("<br>")}
+              </div>
+            `
+            : ""
+        }
+
+      </div>
+
+
+      ${
+        hasOutstanding
+          ? `
+            <div style="
+              margin-top:18px;
+              padding:14px;
+              border:2px solid #dc2626;
+              border-radius:10px;
+              background:#fee2e2;
+              color:#991b1b;
+              font-weight:800;
+            ">
+              This show still has outstanding engineering items.
+              Review them below before closing, or use
+              CLOSE SHOW ANYWAY when appropriate.
+            </div>
+          `
+          : `
+            <div style="
+              margin-top:18px;
+              padding:14px;
+              border:2px solid #16a34a;
+              border-radius:10px;
+              background:#dcfce7;
+              color:#166534;
+              font-weight:800;
+            ">
+              Engineering closeout is clean.
+              No active requests or open follow-ups remain.
+            </div>
+          `
+      }
+
+
+      <h3 style="margin-top:24px;">
+        Closeout Audit
+      </h3>
+
+      <div style="
+        display:grid;
+        grid-template-columns:
+          repeat(auto-fit,minmax(160px,1fr));
+        gap:10px;
+      ">
+
+        ${closeoutAuditBox(
+          "Total Requests",
+          requestRows.length
+        )}
+
+        ${closeoutAuditBox(
+          "Completed",
+          completedCount
+        )}
+
+        ${closeoutAuditBox(
+          "Active Requests",
+          openRequests.length,
+          openRequests.length > 0
+        )}
+
+        ${closeoutAuditBox(
+          "Open Follow-Ups",
+          openFollowUps.length,
+          openFollowUps.length > 0
+        )}
+
+        ${closeoutAuditBox(
+          "End-of-Show Items",
+          endReportItems.length
+        )}
+
+        ${closeoutAuditBox(
+          "Client Damage / Missing",
+          clientItems.length
+        )}
+
+        ${closeoutAuditBox(
+          "Documentation Photos",
+          photoRows.length
+        )}
+
+        ${closeoutAuditBox(
+          "Client Items Without Photos",
+          clientItemsWithoutPhotos.length,
+          clientItemsWithoutPhotos.length > 0
+        )}
+
+      </div>
+
+
+      ${
+        openRequests.length
+          ? `
+            <h3 style="margin-top:26px;">
+              Active Requests (${openRequests.length})
+            </h3>
+
+            ${openRequests.map(r => `
+
+              <div class="completed-card"
+                style="margin-top:8px;">
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:12px;
+                  align-items:flex-start;
+                ">
+
+                  <div>
+
+                    <strong>
+                      Request #${r.id}
+                    </strong>
+
+                    <div style="
+                      font-weight:800;
+                      margin-top:4px;
+                    ">
+                      ${escapeHtml(r.description || "—")}
+                    </div>
+
+                    <div style="
+                      color:#64748b;
+                      font-size:13px;
+                      margin-top:4px;
+                    ">
+                      ${escapeHtml(r.department || "—")}
+                      ·
+                      ${escapeHtml(r.location || "—")}
+                      ·
+                      ${escapeHtml(r.status || "open")}
+                    </div>
+
+                  </div>
+
+                  <button
+                    class="small-btn"
+                    onclick="
+                      openRequestDetail(${r.id})
+                    ">
+                    OPEN
+                  </button>
+
+                </div>
+
+              </div>
+
+            `).join("")}
+
+          `
+          : ""
+      }
+
+
+      ${
+        openFollowUps.length
+          ? `
+            <h3 style="margin-top:26px;">
+              Open Follow-Ups (${openFollowUps.length})
+            </h3>
+
+            ${openFollowUps.map(f => `
+
+              <div class="completed-card"
+                style="margin-top:8px;">
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:12px;
+                  align-items:flex-start;
+                ">
+
+                  <div>
+
+                    <strong>
+                      ${escapeHtml(f.title || "Follow-Up")}
+                    </strong>
+
+                    <div style="
+                      color:#64748b;
+                      font-size:13px;
+                      margin-top:4px;
+                    ">
+                      ${escapeHtml(f.category || "—")}
+                    </div>
+
+                    ${
+                      f.next_action
+                        ? `
+                          <div style="
+                            margin-top:5px;
+                          ">
+                            <strong>Next Action:</strong>
+                            ${escapeHtml(f.next_action)}
+                          </div>
+                        `
+                        : ""
+                    }
+
+                  </div>
+
+                  <button
+                    class="small-btn"
+                    onclick="openCloseoutFollowUp(${f.id})">
+                    OPEN
+                  </button>
+
+                </div>
+
+              </div>
+
+            `).join("")}
+
+          `
+          : ""
+      }
+
+
+      ${
+        clientItemsWithoutPhotos.length
+          ? `
+            <h3 style="margin-top:26px;">
+              Documentation Check
+            </h3>
+
+            <div class="completed-card">
+
+              <strong>
+                ${clientItemsWithoutPhotos.length}
+                client damage/missing item(s)
+                currently have no documentation photos.
+              </strong>
+
+              <div style="
+                color:#64748b;
+                margin-top:5px;
+              ">
+                Photos are not required to close the show,
+                but this may be worth reviewing.
+              </div>
+
+            </div>
+          `
+          : ""
+      }
+
+
+      <label style="margin-top:26px;">
+        Closeout Notes
+      </label>
+
+      <textarea
+        id="closeoutNotes"
+        rows="5"
+        placeholder="Final engineering handoff notes, outstanding equipment, shipping, repair status, or other closeout information..."
+      ></textarea>
+
+
+      <div style="
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
+        margin-top:20px;
+      ">
+
+        ${
+          hasOutstanding
+            ? `
+              <button
+                class="danger"
+                onclick="finalizeShowCloseout()">
+                CLOSE SHOW ANYWAY
+              </button>
+            `
+            : `
+              <button
+                class="primary"
+                style="
+                  background:#16a34a;
+                  border-color:#16a34a;
+                "
+                onclick="finalizeShowCloseout()">
+                CLOSE SHOW
+              </button>
+            `
+        }
+
+        <button
+          class="secondary"
+          onclick="showShows()">
+          CANCEL
+        </button>
+
+      </div>
+
+    </div>
+  `;
+}
+
+
+function closeoutAuditBox(
+  label,
+  value,
+  warning = false
+) {
+
+  return `
+    <div style="
+      padding:14px;
+      border-radius:10px;
+      border:1px solid ${
+        warning
+          ? "#dc2626"
+          : "#cbd5e1"
+      };
+      background:${
+        warning
+          ? "#fee2e2"
+          : "#f8fafc"
+      };
+    ">
+
+      <div style="
+        font-size:28px;
+        font-weight:900;
+        color:${
+          warning
+            ? "#b91c1c"
+            : "#0f172a"
+        };
+      ">
+        ${value}
+      </div>
+
+      <div style="
+        font-size:13px;
+        font-weight:800;
+        color:#475569;
+        margin-top:3px;
+      ">
+        ${escapeHtml(label)}
+      </div>
+
+    </div>
+  `;
+}
+
+
+async function finalizeShowCloseout() {
+
+  if (!currentShow) {
+    return;
+  }
+
+  const notes =
+    document.getElementById("closeoutNotes")
+      ?.value
+      ?.trim() || "";
+
+
+  // Re-read requests so the snapshot reflects
+  // the exact condition at the moment of close.
+
+  const { data: requests, error: requestError } =
+    await sb
+      .from("Requests")
+      .select("*")
+      .eq("show_id", currentShow.id);
+
+  if (requestError) {
+    alert(requestError.message);
+    return;
+  }
+
+  const rows = requests || [];
+
+  const completed =
+    rows.filter(
+      r => r.status === "complete"
+    ).length;
+
+  const openRequests =
+    rows.filter(
+      r => r.status !== "complete"
+    ).length;
+
+  const endItems =
+    rows.filter(
+      r => r.end_of_show_report
+    ).length;
+
+  const clientItems =
+    rows.filter(
+      r => r.client_report
+    ).length;
+
+
+  const { data: followUps, error: followUpError } =
+    await sb
+      .from("Follow_Ups")
+      .select("id,status")
+      .eq("show_id", currentShow.id);
 
   if (followUpError) {
     alert(followUpError.message);
     return;
   }
 
-  const followUpCount =
-    followUps ? followUps.length : 0;
+  const followRows = followUps || [];
 
-  let text =
-    `Close ${currentShow.show_name}?`;
+  const openFollowUps =
+    followRows.filter(
+      f => f.status === "open"
+    ).length;
 
-  if (requestCount || followUpCount) {
 
-    text += "\n\n";
+  if (openRequests || openFollowUps) {
 
-    if (requestCount) {
-      text +=
-        `${requestCount} request(s) are still active.`;
-    }
+    const proceed = window.confirm(
+      "Outstanding engineering items remain.\n\n" +
+      `${openRequests} active request(s)\n` +
+      `${openFollowUps} open follow-up(s)\n\n` +
+      "Close the show anyway?"
+    );
 
-    if (requestCount && followUpCount) {
-      text += "\n";
-    }
-
-    if (followUpCount) {
-      text +=
-        `${followUpCount} follow-up(s) are still open.`;
+    if (!proceed) {
+      return;
     }
   }
 
-  if (!confirm(text)) {
-    return;
-  }
 
-  await closeShow();
-}
+  const { error } =
+    await sb
+      .from("Shows")
+      .update({
 
+        active: false,
 
-async function closeShow() {
-  if (!currentShow) {
-    return;
-  }
+        closed_at:
+          new Date().toISOString(),
 
-  const { error } = await sb
-    .from("Shows")
-    .update({
-      active: false,
-      closed_at: new Date().toISOString(),
-      closed_by:
-        selectedEngineer
-          ? selectedEngineer.name
-          : null
-    })
-    .eq("id", currentShow.id);
+        closed_by:
+          selectedEngineer
+            ? selectedEngineer.name
+            : null,
+
+        closeout_notes:
+          notes || null,
+
+        closeout_total_requests:
+          rows.length,
+
+        closeout_completed_requests:
+          completed,
+
+        closeout_open_requests:
+          openRequests,
+
+        closeout_total_followups:
+          followRows.length,
+
+        closeout_open_followups:
+          openFollowUps,
+
+        closeout_end_report_items:
+          endItems,
+
+        closeout_client_items:
+          clientItems
+
+      })
+      .eq("id", currentShow.id);
+
 
   if (error) {
     alert(error.message);
     return;
   }
 
+
   currentShow = null;
+
   activeRequests = [];
   completedRequests = [];
+
   initialRequestLoad = true;
   knownRequestIds = new Set();
 
   await showActive();
 }
+
 
 function startRealtime() {
   if (realtimeStarted) {
