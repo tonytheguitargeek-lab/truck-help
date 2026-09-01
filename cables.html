@@ -146,9 +146,6 @@ button {
 
 <h2>Take Cable</h2>
 
-<label>Your Name</label>
-<input id="personName" type="text" placeholder="Name">
-
 <label>Cable Type</label>
 <select id="cableType" onchange="updateLengths()">
   <option value="TRIAX">TRIAX</option>
@@ -300,7 +297,7 @@ async function loadOpenCables() {
     openCables.map(row =>
 
       `<option value="${row.id}">
-        ${row.cable_type} — ${row.cable_length} — ${row.person_name}
+        ${row.cable_type} — ${row.cable_length}
       </option>`
 
     ).join("");
@@ -374,7 +371,7 @@ async function loadOpenCables() {
               </div>
 
               <div class="cable-detail">
-                ${row.person_name} · ${time}
+                ${time}
               </div>
 
             </div>
@@ -395,11 +392,7 @@ async function loadOpenCables() {
 
 async function takeCable() {
 
-  const person =
-    document
-      .getElementById("personName")
-      .value
-      .trim();
+  const person = "Cable Door";
 
   const type =
     document
@@ -410,17 +403,6 @@ async function takeCable() {
     document
       .getElementById("cableLength")
       .value;
-
-
-  if (!person) {
-
-    showMessage(
-      "Enter your name.",
-      "error"
-    );
-
-    return;
-  }
 
 
   const { error } = await sb
@@ -445,12 +427,6 @@ async function takeCable() {
   }
 
 
-  localStorage.setItem(
-    "truckHelpCableName",
-    person
-  );
-
-
   showMessage(
     type + " " + length + " checked out.",
     "success"
@@ -468,28 +444,13 @@ async function returnCable() {
       .getElementById("returnCable")
       .value;
 
-  const person =
-    document
-      .getElementById("personName")
-      .value
-      .trim();
+  const person = "Cable Door";
 
 
   if (!id) {
 
     showMessage(
       "Select a cable to return.",
-      "error"
-    );
-
-    return;
-  }
-
-
-  if (!person) {
-
-    showMessage(
-      "Enter your name.",
       "error"
     );
 
@@ -546,21 +507,6 @@ async function returnCable() {
 
 
 updateLengths();
-
-
-const savedName =
-  localStorage.getItem(
-    "truckHelpCableName"
-  );
-
-
-if (savedName) {
-
-  document
-    .getElementById("personName")
-    .value =
-      savedName;
-}
 
 
 loadOpenCables();
