@@ -704,7 +704,15 @@ textarea {
 
   <div class="page">
 
-    <div id="activeView"></div>
+    
+<button id="enablePhoneAlertsBtn"
+        class="primary"
+        style="margin-bottom:12px;"
+        onclick="enablePhoneAlerts()">
+  ENABLE PHONE ALERTS
+</button>
+
+<div id="activeView"></div>
     <div id="menuView" class="hidden"></div>
     <div id="completedView" class="hidden"></div>
     <div id="reportsView" class="hidden"></div>
@@ -8147,5 +8155,44 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
+
+<script>
+async function enablePhoneAlerts() {
+  if (!("Notification" in window)) {
+    alert("Notifications are not supported on this device.");
+    return;
+  }
+
+  if (!("serviceWorker" in navigator)) {
+    alert("Service workers are not supported on this device.");
+    return;
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+
+    if (permission === "granted") {
+      alert("Phone alerts are enabled on this device.");
+      const btn = document.getElementById("enablePhoneAlertsBtn");
+      if (btn) btn.textContent = "PHONE ALERTS ENABLED";
+    } else if (permission === "denied") {
+      alert("Notifications were denied. You can change this later in iPhone Settings.");
+    } else {
+      alert("Notification permission was not enabled.");
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Could not enable phone alerts.");
+  }
+}
+
+window.addEventListener("load", () => {
+  if ("Notification" in window && Notification.permission === "granted") {
+    const btn = document.getElementById("enablePhoneAlertsBtn");
+    if (btn) btn.textContent = "PHONE ALERTS ENABLED";
+  }
+});
+</script>
+
 </body>
 </html>
