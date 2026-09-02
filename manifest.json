@@ -1,0 +1,9 @@
+{
+  "name": "Truck Help Engineering",
+  "short_name": "Truck Help",
+  "start_url": "./engineer.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#134086"
+}
