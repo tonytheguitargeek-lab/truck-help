@@ -405,14 +405,13 @@ async function takeCable() {
       .value;
 
 
-  const { error } = await sb
-    .from("Cable_Checkouts")
-    .insert({
-      person_name: person,
-      cable_type: type,
-      cable_length: length,
-      action: "TAKE"
-    });
+  const { error } = await sb.rpc(
+    "take_cable_checkout",
+    {
+      p_cable_type: type,
+      p_cable_length: length
+    }
+  );
 
 
   if (error) {
