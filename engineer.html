@@ -742,6 +742,7 @@ let activeRequests = [];
 let completedRequests = [];
 let requestFilter = "all";
 let reportType = "end";
+let requestDetailReturn = { type: "history" };
 
 let realtimeStarted = false;
 let knownRequestIds = new Set();
@@ -2530,7 +2531,7 @@ async function showRequestHistory() {
         <div
           class="completed-card request-history-card"
 
-          onclick="openRequestDetail(${r.id})"
+          onclick="openRequestDetail(${r.id}, { type: 'history' })"
 
           data-search="${escapeHtml(searchText)}"
 
@@ -3282,7 +3283,11 @@ function printRequestDetail() {
 }
 
 
-async function openRequestDetail(requestId) {
+async function openRequestDetail(requestId, backContext) {
+
+  if (backContext && typeof backContext === "object") {
+    requestDetailReturn = backContext;
+  }
 
   hideViews();
   menuView.classList.remove("hidden");
@@ -3453,7 +3458,7 @@ const fmt = value =>
           </button>
 
           <button class="small-btn"
-            onclick="showRequestHistory()">
+            onclick="returnFromRequestDetail()">
             BACK
           </button>
 
@@ -3874,6 +3879,23 @@ const fmt = value =>
 
     </div>
   `;
+}
+
+
+function returnFromRequestDetail() {
+  const ctx = requestDetailReturn || { type: "history" };
+
+  if (ctx.type === "pastShow" && ctx.showId != null) {
+    openPastShow(ctx.showId);
+    return;
+  }
+
+  if (ctx.type === "closeout") {
+    showShowCloseout();
+    return;
+  }
+
+  showRequestHistory();
 }
 
 
@@ -4535,7 +4557,10 @@ async function openPastShow(showId) {
                 new Date(b.completed_at || b.created_at) -
                 new Date(a.completed_at || a.created_at)
               )
-              .map(r => completedCardHtml(r, { clickable: true }))
+              .map(r => completedCardHtml(r, {
+                clickable: true,
+                backShowId: showId
+              }))
               .join("")
           : `
             <div class="empty">
@@ -4729,10 +4754,15 @@ function renderCompleted() {
 function completedCardHtml(r, options = {}) {
   const clickable = options.clickable === true;
 
+  const backContext =
+    options.backShowId != null
+      ? `{ type: 'pastShow', showId: ${options.backShowId} }`
+      : `{ type: 'history' }`;
+
   return `
     <div class="completed-card"${
       clickable
-        ? ` onclick="openRequestDetail(${r.id})" style="cursor:pointer;"`
+        ? ` onclick="openRequestDetail(${r.id}, ${backContext})" style="cursor:pointer;"`
         : ""
     }>
 
@@ -7632,7 +7662,7 @@ async function showShowCloseout() {
                   <button
                     class="small-btn"
                     onclick="
-                      openRequestDetail(${r.id})
+                      openRequestDetail(${r.id}, { type: 'closeout' })
                     ">
                     OPEN
                   </button>
