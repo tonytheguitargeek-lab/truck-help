@@ -4535,7 +4535,7 @@ async function openPastShow(showId) {
                 new Date(b.completed_at || b.created_at) -
                 new Date(a.completed_at || a.created_at)
               )
-              .map(completedCardHtml)
+              .map(r => completedCardHtml(r, { clickable: true }))
               .join("")
           : `
             <div class="empty">
@@ -4726,9 +4726,15 @@ function renderCompleted() {
   `;
 }
 
-function completedCardHtml(r) {
+function completedCardHtml(r, options = {}) {
+  const clickable = options.clickable === true;
+
   return `
-    <div class="completed-card">
+    <div class="completed-card"${
+      clickable
+        ? ` onclick="openRequestDetail(${r.id})" style="cursor:pointer;"`
+        : ""
+    }>
 
       <div class="request-name">
         ${escapeHtml(r.requester_name || "")}
