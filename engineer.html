@@ -3311,6 +3311,18 @@ function printRequestDetail() {
 }
 
 
+function noteTypeLabel(type) {
+  const labels = {
+    documentation: "Documentation",
+    classification_correction: "Classification Correction",
+    equipment_update: "Equipment Update",
+    troubleshooting: "Troubleshooting"
+  };
+
+  return labels[type] || (type || "Note");
+}
+
+
 async function openRequestDetail(requestId, backContext) {
 
   if (backContext && typeof backContext === "object") {
@@ -3414,6 +3426,49 @@ async function openRequestDetail(requestId, backContext) {
   }
 
 
+  const { data: requestNotes, error: notesError } =
+    await sb
+      .from("Request_Notes")
+      .select("*")
+      .eq("request_id", requestId)
+      .order("created_at", { ascending: true });
+
+  if (notesError) {
+    console.error(notesError);
+  }
+
+  const requestNotesRows = requestNotes || [];
+
+  const noteShowIds =
+    Array.from(
+      new Set(
+        requestNotesRows
+          .map(n => n.show_id)
+          .filter(id => id !== null && id !== undefined)
+      )
+    );
+
+  let noteShowMap = new Map();
+
+  if (noteShowIds.length) {
+
+    const { data: noteShows, error: noteShowsError } =
+      await sb
+        .from("Shows")
+        .select("id, show_name")
+        .in("id", noteShowIds);
+
+    if (noteShowsError) {
+      console.error(noteShowsError);
+    } else {
+      noteShowMap =
+        new Map(
+          (noteShows || []).map(s => [s.id, s])
+        );
+    }
+  }
+
+
 const fmt = value =>
     value
       ? new Date(value).toLocaleString()
@@ -3479,6 +3534,21 @@ const fmt = value =>
             >
             Include Photos
           </label>
+
+          <button class="small-btn"
+            onclick="openDocumentIncident(${request.id})">
+            DOCUMENT INCIDENT
+          </button>
+
+          <button class="small-btn"
+            onclick="openEditClassification(${request.id})">
+            EDIT CLASSIFICATION
+          </button>
+
+          <button class="small-btn"
+            onclick="openEditEquipment(${request.id})">
+            EDIT EQUIPMENT
+          </button>
 
 <button class="small-btn"
             onclick="printRequestDetail()">
@@ -3905,8 +3975,594 @@ const fmt = value =>
           `
       }
 
+
+      <h3 style="margin-top:22px;">
+        Equipment
+      </h3>
+
+      <div class="completed-card"
+        style="margin-top:8px;">
+
+        ${
+          request.equipment_name ||
+          request.equipment_make_model ||
+          request.equipment_serial ||
+          request.equipment_asset_id
+            ? `
+              ${
+                request.equipment_name
+                  ? `<div><strong>Name / Type:</strong> ${escapeHtml(request.equipment_name)}</div>`
+                  : ""
+              }
+              ${
+                request.equipment_make_model
+                  ? `<div><strong>Make / Model:</strong> ${escapeHtml(request.equipment_make_model)}</div>`
+                  : ""
+              }
+              ${
+                request.equipment_serial
+                  ? `<div><strong>Serial Number:</strong> ${escapeHtml(request.equipment_serial)}</div>`
+                  : ""
+              }
+              ${
+                request.equipment_asset_id
+                  ? `<div><strong>Truck Asset ID:</strong> ${escapeHtml(request.equipment_asset_id)}</div>`
+                  : ""
+              }
+            `
+            : `<span style="color:#64748b;">No equipment identity recorded.</span>`
+        }
+
+      </div>
+
+
+      <h3 style="margin-top:22px;">
+        Engineering Updates / History (${requestNotesRows.length})
+      </h3>
+
+      ${
+        requestNotesRows.length
+          ? requestNotesRows.map(n => `
+              <div class="completed-card"
+                style="margin-top:10px;">
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:12px;
+                  align-items:flex-start;
+                ">
+                  <strong>
+                    ${escapeHtml(noteTypeLabel(n.note_type))}
+                  </strong>
+
+                  <span style="color:#64748b;font-size:13px;">
+                    ${escapeHtml(fmt(n.created_at))}
+                  </span>
+                </div>
+
+                <div style="
+                  margin-top:8px;
+                  white-space:pre-wrap;
+                ">
+                  ${escapeHtml(n.notes || "")}
+                </div>
+
+                <div style="
+                  margin-top:8px;
+                  color:#64748b;
+                  font-size:13px;
+                ">
+                  ${escapeHtml(n.created_by || "Unknown Engineer")}
+                  ${
+                    n.show_id
+                      ? ` · ${escapeHtml(
+                          (noteShowMap.get(n.show_id) || {}).show_name ||
+                          ("Show #" + n.show_id)
+                        )}`
+                      : ""
+                  }
+                </div>
+
+              </div>
+            `).join("")
+          : `
+            <div class="empty"
+              style="margin-top:8px;">
+              No engineering updates recorded.
+            </div>
+          `
+      }
+
     </div>
   `;
+}
+
+
+function openDocumentIncident(requestId) {
+
+  modal.innerHTML = `
+    <h2>Document Incident</h2>
+
+    <label>
+      Notes
+    </label>
+
+    <textarea id="documentIncidentNotes"
+      placeholder="Example: A1 laptop got wet during load-in. Dried out, currently working normally. Documenting for future reference."></textarea>
+
+    <button class="primary full"
+      style="margin-top:14px;"
+      onclick="saveDocumentIncident(${requestId})">
+      SAVE NOTE
+    </button>
+
+    <button class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+
+let saveDocumentIncidentInProgress = false;
+
+async function saveDocumentIncident(requestId) {
+  if (saveDocumentIncidentInProgress) {
+    return;
+  }
+  saveDocumentIncidentInProgress = true;
+  try {
+    await saveDocumentIncidentImpl(requestId);
+  } finally {
+    saveDocumentIncidentInProgress = false;
+  }
+}
+
+async function saveDocumentIncidentImpl(requestId) {
+
+  const notesInput =
+    document.getElementById("documentIncidentNotes");
+
+  const notes =
+    notesInput
+      ? notesInput.value.trim()
+      : "";
+
+  if (!notes) {
+    alert("Please enter a description of the incident.");
+    return;
+  }
+
+  const { error } = await sb
+    .from("Request_Notes")
+    .insert({
+      request_id: requestId,
+      show_id:
+        currentShow
+          ? currentShow.id
+          : null,
+      note_type: "documentation",
+      notes,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (error) {
+    alert(
+      "Could not save note:\n\n" +
+      error.message
+    );
+    return;
+  }
+
+  closeModal();
+
+  await openRequestDetail(requestId);
+}
+
+
+async function openEditClassification(requestId) {
+
+  const { data: request, error } =
+    await sb
+      .from("Requests")
+      .select(
+        "end_of_show_report, end_of_show_category, client_report, client_report_category"
+      )
+      .eq("id", requestId)
+      .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  modal.innerHTML = `
+    <h2>Edit Classification</h2>
+
+    <label style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+      <input
+        id="editEndOfShowCheck"
+        type="checkbox"
+        style="width:auto;"
+        ${request.end_of_show_report ? "checked" : ""}
+        onchange="toggleEditEndOfShowCategory()">
+      Add to End-of-Show Report
+    </label>
+
+    <div id="editEndOfShowCategoryWrap"
+      class="${request.end_of_show_report ? "" : "hidden"}">
+      <label>End-of-Show Category</label>
+
+      <select id="editEndOfShowCategory">
+        <option value="Repair Needed" ${request.end_of_show_category === "Repair Needed" ? "selected" : ""}>Repair Needed</option>
+        <option value="Broken Gear" ${request.end_of_show_category === "Broken Gear" ? "selected" : ""}>Broken Gear</option>
+        <option value="Lost / Missing Gear" ${request.end_of_show_category === "Lost / Missing Gear" ? "selected" : ""}>Lost / Missing Gear</option>
+        <option value="Other" ${request.end_of_show_category === "Other" ? "selected" : ""}>Other</option>
+      </select>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:10px;margin-top:16px;">
+      <input
+        id="editClientReportCheck"
+        type="checkbox"
+        style="width:auto;"
+        ${request.client_report ? "checked" : ""}
+        onchange="toggleEditClientReportCategory()">
+      Add to Client Damage / Missing Report
+    </label>
+
+    <div id="editClientReportCategoryWrap"
+      class="${request.client_report ? "" : "hidden"}">
+      <label>Client Report Category</label>
+
+      <select id="editClientReportCategory">
+        <option value="Damaged" ${request.client_report_category === "Damaged" ? "selected" : ""}>Damaged</option>
+        <option value="Missing" ${request.client_report_category === "Missing" ? "selected" : ""}>Missing</option>
+      </select>
+    </div>
+
+    <label style="margin-top:16px;">
+      Reason for change
+    </label>
+
+    <input
+      id="editClassificationReason"
+      type="text"
+      placeholder="Example: Missed at closeout, confirmed damaged by client email">
+
+    <button class="primary full"
+      style="margin-top:14px;"
+      onclick="saveEditClassification(${requestId})">
+      SAVE CLASSIFICATION
+    </button>
+
+    <button class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+
+function toggleEditEndOfShowCategory() {
+  const checked =
+    document.getElementById("editEndOfShowCheck").checked;
+
+  document
+    .getElementById("editEndOfShowCategoryWrap")
+    .classList.toggle("hidden", !checked);
+}
+
+
+function toggleEditClientReportCategory() {
+  const checked =
+    document.getElementById("editClientReportCheck").checked;
+
+  document
+    .getElementById("editClientReportCategoryWrap")
+    .classList.toggle("hidden", !checked);
+}
+
+
+let saveEditClassificationInProgress = false;
+
+async function saveEditClassification(requestId) {
+  if (saveEditClassificationInProgress) {
+    return;
+  }
+  saveEditClassificationInProgress = true;
+  try {
+    await saveEditClassificationImpl(requestId);
+  } finally {
+    saveEditClassificationInProgress = false;
+  }
+}
+
+async function saveEditClassificationImpl(requestId) {
+
+  const reason =
+    document.getElementById("editClassificationReason")
+      .value.trim();
+
+  if (!reason) {
+    alert("Please enter a reason for this change.");
+    return;
+  }
+
+  const endOfShowReport =
+    document.getElementById("editEndOfShowCheck").checked;
+
+  const endOfShowCategory =
+    endOfShowReport
+      ? document.getElementById("editEndOfShowCategory").value
+      : null;
+
+  const clientReport =
+    document.getElementById("editClientReportCheck").checked;
+
+  const clientReportCategory =
+    clientReport
+      ? document.getElementById("editClientReportCategory").value
+      : null;
+
+  const { data: before, error: beforeError } =
+    await sb
+      .from("Requests")
+      .select(
+        "end_of_show_report, end_of_show_category, client_report, client_report_category"
+      )
+      .eq("id", requestId)
+      .single();
+
+  if (beforeError) {
+    alert(beforeError.message);
+    return;
+  }
+
+  const { error: updateError } = await sb
+    .from("Requests")
+    .update({
+      end_of_show_report: endOfShowReport,
+      end_of_show_category: endOfShowCategory,
+      client_report: clientReport,
+      client_report_category: clientReportCategory
+    })
+    .eq("id", requestId);
+
+  if (updateError) {
+    alert(updateError.message);
+    return;
+  }
+
+  const changeNote =
+    "Classification changed.\n\n" +
+    "Before:\n" +
+    `  End-of-Show Report: ${before.end_of_show_report ? "Yes" : "No"}` +
+    (before.end_of_show_report ? ` (${before.end_of_show_category || "—"})` : "") +
+    "\n" +
+    `  Client Damage/Missing: ${before.client_report ? "Yes" : "No"}` +
+    (before.client_report ? ` (${before.client_report_category || "—"})` : "") +
+    "\n\n" +
+    "After:\n" +
+    `  End-of-Show Report: ${endOfShowReport ? "Yes" : "No"}` +
+    (endOfShowReport ? ` (${endOfShowCategory || "—"})` : "") +
+    "\n" +
+    `  Client Damage/Missing: ${clientReport ? "Yes" : "No"}` +
+    (clientReport ? ` (${clientReportCategory || "—"})` : "") +
+    "\n\n" +
+    `Reason: ${reason}`;
+
+  const { error: noteError } = await sb
+    .from("Request_Notes")
+    .insert({
+      request_id: requestId,
+      show_id:
+        currentShow
+          ? currentShow.id
+          : null,
+      note_type: "classification_correction",
+      notes: changeNote,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (noteError) {
+    alert(
+      "Classification was updated, but the history note could not be saved:\n\n" +
+      noteError.message
+    );
+  }
+
+  closeModal();
+
+  await openRequestDetail(requestId);
+}
+
+
+async function openEditEquipment(requestId) {
+
+  const { data: request, error } =
+    await sb
+      .from("Requests")
+      .select(
+        "equipment_name, equipment_make_model, equipment_serial, equipment_asset_id"
+      )
+      .eq("id", requestId)
+      .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  modal.innerHTML = `
+    <h2>Edit Equipment Identity</h2>
+
+    <label>
+      Equipment Name / Type
+    </label>
+
+    <input
+      id="editEquipmentName"
+      type="text"
+      placeholder="Example: Camera 3, A1 Laptop"
+      value="${escapeHtml(request.equipment_name || "")}">
+
+    <label style="margin-top:14px;">
+      Make / Model
+    </label>
+
+    <input
+      id="editEquipmentMakeModel"
+      type="text"
+      placeholder="Example: Sony HDC-3500"
+      value="${escapeHtml(request.equipment_make_model || "")}">
+
+    <label style="margin-top:14px;">
+      Serial Number
+    </label>
+
+    <input
+      id="editEquipmentSerial"
+      type="text"
+      placeholder="Optional"
+      value="${escapeHtml(request.equipment_serial || "")}">
+
+    <label style="margin-top:14px;">
+      Truck Asset ID
+    </label>
+
+    <input
+      id="editEquipmentAssetId"
+      type="text"
+      placeholder="Optional"
+      value="${escapeHtml(request.equipment_asset_id || "")}">
+
+    <button class="primary full"
+      style="margin-top:14px;"
+      onclick="saveEditEquipment(${requestId})">
+      SAVE EQUIPMENT
+    </button>
+
+    <button class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+
+let saveEditEquipmentInProgress = false;
+
+async function saveEditEquipment(requestId) {
+  if (saveEditEquipmentInProgress) {
+    return;
+  }
+  saveEditEquipmentInProgress = true;
+  try {
+    await saveEditEquipmentImpl(requestId);
+  } finally {
+    saveEditEquipmentInProgress = false;
+  }
+}
+
+async function saveEditEquipmentImpl(requestId) {
+
+  const equipmentName =
+    document.getElementById("editEquipmentName").value.trim();
+
+  const equipmentMakeModel =
+    document.getElementById("editEquipmentMakeModel").value.trim();
+
+  const equipmentSerial =
+    document.getElementById("editEquipmentSerial").value.trim();
+
+  const equipmentAssetId =
+    document.getElementById("editEquipmentAssetId").value.trim();
+
+  const { data: before, error: beforeError } =
+    await sb
+      .from("Requests")
+      .select(
+        "equipment_name, equipment_make_model, equipment_serial, equipment_asset_id"
+      )
+      .eq("id", requestId)
+      .single();
+
+  if (beforeError) {
+    alert(beforeError.message);
+    return;
+  }
+
+  const { error: updateError } = await sb
+    .from("Requests")
+    .update({
+      equipment_name: equipmentName || null,
+      equipment_make_model: equipmentMakeModel || null,
+      equipment_serial: equipmentSerial || null,
+      equipment_asset_id: equipmentAssetId || null
+    })
+    .eq("id", requestId);
+
+  if (updateError) {
+    alert(updateError.message);
+    return;
+  }
+
+  const changeNote =
+    "Equipment identity updated.\n\n" +
+    "Before:\n" +
+    `  Name / Type: ${before.equipment_name || "—"}\n` +
+    `  Make / Model: ${before.equipment_make_model || "—"}\n` +
+    `  Serial: ${before.equipment_serial || "—"}\n` +
+    `  Asset ID: ${before.equipment_asset_id || "—"}\n\n` +
+    "After:\n" +
+    `  Name / Type: ${equipmentName || "—"}\n` +
+    `  Make / Model: ${equipmentMakeModel || "—"}\n` +
+    `  Serial: ${equipmentSerial || "—"}\n` +
+    `  Asset ID: ${equipmentAssetId || "—"}`;
+
+  const { error: noteError } = await sb
+    .from("Request_Notes")
+    .insert({
+      request_id: requestId,
+      show_id:
+        currentShow
+          ? currentShow.id
+          : null,
+      note_type: "equipment_update",
+      notes: changeNote,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (noteError) {
+    alert(
+      "Equipment identity was updated, but the history note could not be saved:\n\n" +
+      noteError.message
+    );
+  }
+
+  closeModal();
+
+  await openRequestDetail(requestId);
 }
 
 
