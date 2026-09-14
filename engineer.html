@@ -2109,7 +2109,21 @@ async function cleanupCompletionPhotoUploads(uploaded) {
 }
 
 
+let completeRequestInProgress = false;
+
 async function completeRequest(id) {
+  if (completeRequestInProgress) {
+    return;
+  }
+  completeRequestInProgress = true;
+  try {
+    await completeRequestImpl(id);
+  } finally {
+    completeRequestInProgress = false;
+  }
+}
+
+async function completeRequestImpl(id) {
   const notes =
     document.getElementById("resolutionNotes")
       .value.trim();
@@ -3122,7 +3136,21 @@ function renderDetailPhotoFields() {
 }
 
 
+let saveAdditionalRequestPhotosInProgress = false;
+
 async function saveAdditionalRequestPhotos(requestId) {
+  if (saveAdditionalRequestPhotosInProgress) {
+    return;
+  }
+  saveAdditionalRequestPhotosInProgress = true;
+  try {
+    await saveAdditionalRequestPhotosImpl(requestId);
+  } finally {
+    saveAdditionalRequestPhotosInProgress = false;
+  }
+}
+
+async function saveAdditionalRequestPhotosImpl(requestId) {
 
   const input =
     document.getElementById("detailPhotoInput");
