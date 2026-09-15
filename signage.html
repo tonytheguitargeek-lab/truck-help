@@ -176,6 +176,20 @@
 
   </div>
 
+  <iframe id="printFrame"
+    title="Sign print output"
+    aria-hidden="true"
+    style="
+      position:fixed;
+      right:0;
+      bottom:0;
+      width:0;
+      height:0;
+      border:0;
+      visibility:hidden;
+    ">
+  </iframe>
+
 
   <script src="qrcode.min.js"></script>
 
@@ -214,10 +228,21 @@
         return;
       }
 
-      const printWindow =
-        window.open("", "_blank");
+      // Printed from a persistent hidden iframe on this same page,
+      // not a new window/tab. The user never leaves QR Codes /
+      // Signage, so there is nothing to return from and nothing that
+      // depends on the browser allowing a script-opened window to
+      // close itself.
+      const frame =
+        document.getElementById("printFrame");
 
-      printWindow.document.write(`
+      const frameDoc =
+        frame.contentDocument ||
+        frame.contentWindow.document;
+
+      frameDoc.open();
+
+      frameDoc.write(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -269,6 +294,34 @@
             div {
               box-sizing:border-box;
             }
+
+            /*
+              iOS Safari / AirPrint only (true only under WebKit's iOS
+              print pipeline, false on desktop Safari and all Chrome/
+              Firefox/Edge). NOT physically verified on a real iPhone/
+              printer yet - kept isolated here so it can be adjusted
+              or removed without touching the desktop layout above.
+            */
+            @supports (-webkit-touch-callout: none) {
+              .page {
+                min-height:8.5in;
+                padding:0.38in;
+              }
+
+              h2 {
+                font-size:32px;
+              }
+
+              p {
+                font-size:20px;
+              }
+
+              img,
+              canvas {
+                width:2.72in !important;
+                height:2.72in !important;
+              }
+            }
           </style>
         </head>
 
@@ -280,11 +333,11 @@
         </html>
       `);
 
-      printWindow.document.close();
+      frameDoc.close();
 
       setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
       }, 300);
     }
   </script>
