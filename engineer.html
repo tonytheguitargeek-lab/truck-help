@@ -1718,6 +1718,11 @@ async function handoffRequest(requestId, engineerId) {
 
 
 function openComplete(id) {
+
+  const sourceRequest =
+    activeRequests.find(r => Number(r.id) === Number(id)) ||
+    {};
+
   modal.innerHTML = `
     <h2>Complete Request</h2>
 
@@ -1829,7 +1834,15 @@ function openComplete(id) {
     </label>
 
     <div id="followUpFieldsWrap" class="hidden">
-      <label>Follow-Up Category</label>
+
+      <label>Follow-Up Type</label>
+
+      <select id="followUpKind">
+        <option value="action" selected>Action / Repair</option>
+        <option value="watch">Watch / Verify</option>
+      </select>
+
+      <label style="margin-top:14px;">Follow-Up Category</label>
 
       <select id="followUpCategory">
         <option value="Repair Needed">Repair Needed</option>
@@ -1844,6 +1857,39 @@ function openComplete(id) {
         id="followUpNextAction"
         type="text"
         placeholder="Example: Ship to shop">
+
+      <label style="margin-top:14px;">
+        Equipment (optional)
+      </label>
+
+      <input
+        id="followUpEquipmentName"
+        type="text"
+        placeholder="Name / Type"
+        value="${escapeHtml(sourceRequest.equipment_name || "")}"
+        style="margin-top:6px;">
+
+      <input
+        id="followUpEquipmentMakeModel"
+        type="text"
+        placeholder="Make / Model"
+        value="${escapeHtml(sourceRequest.equipment_make_model || "")}"
+        style="margin-top:6px;">
+
+      <input
+        id="followUpEquipmentSerial"
+        type="text"
+        placeholder="Serial Number"
+        value="${escapeHtml(sourceRequest.equipment_serial || "")}"
+        style="margin-top:6px;">
+
+      <input
+        id="followUpEquipmentAssetId"
+        type="text"
+        placeholder="Truck Asset ID"
+        value="${escapeHtml(sourceRequest.equipment_asset_id || "")}"
+        style="margin-top:6px;">
+
     </div>
 
     <button class="primary full"
@@ -2162,6 +2208,31 @@ async function completeRequestImpl(id) {
       ? document.getElementById("followUpNextAction").value.trim()
       : null;
 
+  const followUpKind =
+    createFollowUp
+      ? document.getElementById("followUpKind").value
+      : null;
+
+  const followUpEquipmentName =
+    createFollowUp
+      ? document.getElementById("followUpEquipmentName").value.trim()
+      : null;
+
+  const followUpEquipmentMakeModel =
+    createFollowUp
+      ? document.getElementById("followUpEquipmentMakeModel").value.trim()
+      : null;
+
+  const followUpEquipmentSerial =
+    createFollowUp
+      ? document.getElementById("followUpEquipmentSerial").value.trim()
+      : null;
+
+  const followUpEquipmentAssetId =
+    createFollowUp
+      ? document.getElementById("followUpEquipmentAssetId").value.trim()
+      : null;
+
   if (createFollowUp && !followUpNextAction) {
 
     alert("Please enter a short Next Action.");
@@ -2234,7 +2305,7 @@ const { data: requestRecord, error: requestLookupError } =
   }
   if (createFollowUp) {
 
-    const { error: followUpError } = await sb
+    const { data: newFollowUp, error: followUpError } = await sb
       .from("Follow_Ups")
       .insert({
         request_id: id,
@@ -2243,11 +2314,18 @@ const { data: requestRecord, error: requestLookupError } =
         title: requestRecord.description || "Follow-Up",
         next_action: followUpNextAction,
         status: "open",
+        follow_up_kind: followUpKind || "action",
+        equipment_name: followUpEquipmentName || null,
+        equipment_make_model: followUpEquipmentMakeModel || null,
+        equipment_serial: followUpEquipmentSerial || null,
+        equipment_asset_id: followUpEquipmentAssetId || null,
         created_by:
           selectedEngineer
             ? selectedEngineer.name
             : null
-      });
+      })
+      .select("id")
+      .single();
 
     if (followUpError) {
 
@@ -2261,6 +2339,32 @@ const { data: requestRecord, error: requestLookupError } =
       await loadRequests();
 
       return;
+
+    }
+
+    const { error: firstEventError } = await sb
+      .from("Follow_Up_Events")
+      .insert({
+        follow_up_id: newFollowUp.id,
+        show_id: requestRecord.show_id,
+        event_type: "discovered",
+        event_at: new Date().toISOString(),
+        notes:
+          (requestRecord.description
+            ? requestRecord.description + " — "
+            : "") + followUpNextAction,
+        created_by:
+          selectedEngineer
+            ? selectedEngineer.name
+            : null
+      });
+
+    if (firstEventError) {
+
+      alert(
+        "Follow-Up was created, but its history entry could not be saved:\n\n" +
+        firstEventError.message
+      );
 
     }
 
@@ -3320,6 +3424,28 @@ function noteTypeLabel(type) {
   };
 
   return labels[type] || (type || "Note");
+}
+
+
+function followUpEventLabel(type) {
+  const labels = {
+    discovered: "Discovered",
+    sent_to_shop: "Sent to Shop",
+    shop_result: "Shop Result",
+    returned: "Returned to Truck",
+    installed_tested: "Installed / Tested",
+    verified_good: "Verified Good",
+    verified_failed: "Verified Failed",
+    resolved: "Resolved",
+    note: "Note"
+  };
+
+  return labels[type] || (type || "Event");
+}
+
+
+function followUpKindLabel(kind) {
+  return kind === "watch" ? "Watch / Verify" : "Action / Repair";
 }
 
 
@@ -5526,7 +5652,13 @@ function openAddFollowUp() {
   modal.innerHTML = `
     <h2>Add Follow-Up</h2>
 
-    <label>Category</label>
+    <label>Follow-Up Type</label>
+    <select id="manualFollowUpKind">
+      <option value="action" selected>Action / Repair</option>
+      <option value="watch">Watch / Verify</option>
+    </select>
+
+    <label style="margin-top:12px;">Category</label>
     <select id="manualFollowUpCategory">
       <option value="Repair Needed">
         Repair Needed
@@ -5559,6 +5691,34 @@ function openAddFollowUp() {
       type="text"
       placeholder="Example: Order replacement"
     >
+
+    <label style="margin-top:12px;">
+      Equipment (optional)
+    </label>
+
+    <input
+      id="manualFollowUpEquipmentName"
+      type="text"
+      placeholder="Name / Type"
+      style="margin-top:6px;">
+
+    <input
+      id="manualFollowUpEquipmentMakeModel"
+      type="text"
+      placeholder="Make / Model"
+      style="margin-top:6px;">
+
+    <input
+      id="manualFollowUpEquipmentSerial"
+      type="text"
+      placeholder="Serial Number"
+      style="margin-top:6px;">
+
+    <input
+      id="manualFollowUpEquipmentAssetId"
+      type="text"
+      placeholder="Truck Asset ID"
+      style="margin-top:6px;">
 
     <label style="margin-top:12px;">
       Show
@@ -5604,7 +5764,21 @@ function openAddFollowUp() {
 }
 
 
+let saveManualFollowUpInProgress = false;
+
 async function saveManualFollowUp() {
+  if (saveManualFollowUpInProgress) {
+    return;
+  }
+  saveManualFollowUpInProgress = true;
+  try {
+    await saveManualFollowUpImpl();
+  } finally {
+    saveManualFollowUpInProgress = false;
+  }
+}
+
+async function saveManualFollowUpImpl() {
 
   const category =
     document
@@ -5627,6 +5801,35 @@ async function saveManualFollowUp() {
     document
       .getElementById("manualFollowUpShow")
       .value;
+
+  const kind =
+    document
+      .getElementById("manualFollowUpKind")
+      .value;
+
+  const equipmentName =
+    document
+      .getElementById("manualFollowUpEquipmentName")
+      .value
+      .trim();
+
+  const equipmentMakeModel =
+    document
+      .getElementById("manualFollowUpEquipmentMakeModel")
+      .value
+      .trim();
+
+  const equipmentSerial =
+    document
+      .getElementById("manualFollowUpEquipmentSerial")
+      .value
+      .trim();
+
+  const equipmentAssetId =
+    document
+      .getElementById("manualFollowUpEquipmentAssetId")
+      .value
+      .trim();
 
   if (!title) {
     alert("Please enter what needs attention.");
@@ -5746,7 +5949,7 @@ async function saveManualFollowUp() {
   // SAVE FOLLOW-UP
   // ---------------------------------------------
 
-  const { error } = await sb
+  const { data: newFollowUp, error } = await sb
     .from("Follow_Ups")
     .insert({
       request_id: null,
@@ -5755,15 +5958,45 @@ async function saveManualFollowUp() {
       title,
       next_action: nextAction,
       status: "open",
+      follow_up_kind: kind || "action",
+      equipment_name: equipmentName || null,
+      equipment_make_model: equipmentMakeModel || null,
+      equipment_serial: equipmentSerial || null,
+      equipment_asset_id: equipmentAssetId || null,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  const { error: firstEventError } = await sb
+    .from("Follow_Up_Events")
+    .insert({
+      follow_up_id: newFollowUp.id,
+      show_id: showId,
+      event_type: "discovered",
+      event_at: new Date().toISOString(),
+      notes: title + " — " + nextAction,
       created_by:
         selectedEngineer
           ? selectedEngineer.name
           : null
     });
 
-  if (error) {
-    alert(error.message);
-    return;
+  if (firstEventError) {
+
+    alert(
+      "Follow-Up was created, but its history entry could not be saved:\n\n" +
+      firstEventError.message
+    );
+
   }
 
   closeModal();
@@ -5878,7 +6111,21 @@ async function openCloseoutFollowUp(id) {
 }
 
 
-async function resolveFollowUp(id, returnToCloseout = false) {
+let resolveFollowUpInProgress = false;
+
+async function resolveFollowUp(id, returnTo = false) {
+  if (resolveFollowUpInProgress) {
+    return;
+  }
+  resolveFollowUpInProgress = true;
+  try {
+    await resolveFollowUpImpl(id, returnTo);
+  } finally {
+    resolveFollowUpInProgress = false;
+  }
+}
+
+async function resolveFollowUpImpl(id, returnTo = false) {
 
   const resolution = prompt(
     "Resolution:"
@@ -5895,11 +6142,13 @@ async function resolveFollowUp(id, returnToCloseout = false) {
     return;
   }
 
+  const resolvedAt = new Date().toISOString();
+
   const { error } = await sb
     .from("Follow_Ups")
     .update({
       status: "resolved",
-      resolved_at: new Date().toISOString(),
+      resolved_at: resolvedAt,
       resolved_by:
         selectedEngineer
           ? selectedEngineer.name
@@ -5913,16 +6162,685 @@ async function resolveFollowUp(id, returnToCloseout = false) {
     return;
   }
 
-  if (returnToCloseout) {
+  const { error: resolvedEventError } = await sb
+    .from("Follow_Up_Events")
+    .insert({
+      follow_up_id: id,
+      show_id:
+        currentShow
+          ? currentShow.id
+          : null,
+      event_type: "resolved",
+      event_at: resolvedAt,
+      notes: cleanResolution,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (resolvedEventError) {
+
+    alert(
+      "Follow-Up was resolved, but its final history entry could not be saved:\n\n" +
+      resolvedEventError.message
+    );
+
+  }
+
+  if (returnTo === true) {
 
     closeModal();
 
     await showShowCloseout();
 
+  } else if (returnTo === "detail") {
+
+    await openFollowUpDetail(id);
+
   } else {
 
     await showFollowUps();
   }
+}
+
+
+let followUpDetailReturn = { type: "followUpsList" };
+
+async function openFollowUpDetail(id, backContext) {
+
+  if (backContext && typeof backContext === "object") {
+    followUpDetailReturn = backContext;
+  }
+
+  hideViews();
+  menuView.classList.remove("hidden");
+
+  menuView.innerHTML = `
+    <div class="panel">
+      Loading follow-up...
+    </div>
+  `;
+
+  const { data: followUp, error } =
+    await sb
+      .from("Follow_Ups")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+  if (error) {
+
+    menuView.innerHTML = `
+      <div class="panel">
+        ${escapeHtml(error.message)}
+      </div>
+    `;
+
+    return;
+  }
+
+  const { data: events, error: eventsError } =
+    await sb
+      .from("Follow_Up_Events")
+      .select("*")
+      .eq("follow_up_id", id)
+      .order("event_at", { ascending: true });
+
+  if (eventsError) {
+    console.error(eventsError);
+  }
+
+  const eventRows = events || [];
+
+  const relevantShowIds =
+    Array.from(
+      new Set(
+        [followUp.show_id, ...eventRows.map(e => e.show_id)]
+          .filter(sid => sid !== null && sid !== undefined)
+      )
+    );
+
+  let showMap = new Map();
+
+  if (relevantShowIds.length) {
+
+    const { data: shows, error: showsError } =
+      await sb
+        .from("Shows")
+        .select("id, show_name, venue")
+        .in("id", relevantShowIds);
+
+    if (showsError) {
+      console.error(showsError);
+    } else {
+      showMap =
+        new Map((shows || []).map(s => [s.id, s]));
+    }
+  }
+
+  const showLabel = sid => {
+
+    if (sid === null || sid === undefined) {
+      return "GENERAL / NO SHOW";
+    }
+
+    const show = showMap.get(sid);
+
+    return show
+      ? show.show_name + (show.venue ? " — " + show.venue : "")
+      : ("Show #" + sid);
+  };
+
+  const kind =
+    followUp.follow_up_kind === "watch" ? "watch" : "action";
+
+  const isOpen = followUp.status === "open";
+
+  const hasEquipment =
+    followUp.equipment_name ||
+    followUp.equipment_make_model ||
+    followUp.equipment_serial ||
+    followUp.equipment_asset_id;
+
+  menuView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header">
+
+        <div>
+          <h2 style="margin:0;">
+            ${escapeHtml(followUp.title || "Follow-Up")}
+          </h2>
+
+          <div style="color:#64748b;margin-top:4px;">
+            ${escapeHtml(showLabel(followUp.show_id))}
+          </div>
+        </div>
+
+        <button class="small-btn"
+          onclick="returnFromFollowUpDetail()">
+          BACK
+        </button>
+
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+
+        <span class="badge">
+          ${escapeHtml((followUp.status || "open").toUpperCase())}
+        </span>
+
+        <span class="badge">
+          ${escapeHtml(followUpKindLabel(kind).toUpperCase())}
+        </span>
+
+      </div>
+
+      <div style="
+        margin-top:16px;
+        padding:14px;
+        border:1px solid #cbd5e1;
+        border-radius:10px;
+        background:#f8fafc;
+        line-height:1.7;
+      ">
+
+        <div>
+          <strong>Category:</strong>
+          ${escapeHtml(followUp.category || "—")}
+        </div>
+
+        <div>
+          <strong>Next Action:</strong>
+          ${escapeHtml(followUp.next_action || "—")}
+        </div>
+
+        ${
+          followUp.request_id
+            ? `
+              <div>
+                <strong>Originating Request:</strong>
+                <a href="javascript:void(0)"
+                  onclick="openRequestDetail(${followUp.request_id})">
+                  Request #${followUp.request_id}
+                </a>
+              </div>
+            `
+            : ""
+        }
+
+        <div>
+          <strong>Created by:</strong>
+          ${escapeHtml(followUp.created_by || "—")}
+          ${
+            followUp.created_at
+              ? " · " + escapeHtml(new Date(followUp.created_at).toLocaleString())
+              : ""
+          }
+        </div>
+
+      </div>
+
+      <h3 style="margin-top:22px;">
+        Equipment
+      </h3>
+
+      <div class="completed-card"
+        style="margin-top:8px;">
+
+        ${
+          hasEquipment
+            ? `
+              ${
+                followUp.equipment_name
+                  ? `<div><strong>Name / Type:</strong> ${escapeHtml(followUp.equipment_name)}</div>`
+                  : ""
+              }
+              ${
+                followUp.equipment_make_model
+                  ? `<div><strong>Make / Model:</strong> ${escapeHtml(followUp.equipment_make_model)}</div>`
+                  : ""
+              }
+              ${
+                followUp.equipment_serial
+                  ? `<div><strong>Serial Number:</strong> ${escapeHtml(followUp.equipment_serial)}</div>`
+                  : ""
+              }
+              ${
+                followUp.equipment_asset_id
+                  ? `<div><strong>Truck Asset ID:</strong> ${escapeHtml(followUp.equipment_asset_id)}</div>`
+                  : ""
+              }
+            `
+            : `<span style="color:#64748b;">No equipment identity recorded.</span>`
+        }
+
+      </div>
+
+      ${
+        !isOpen
+          ? `
+            <h3 style="margin-top:22px;">
+              Resolution
+            </h3>
+
+            <div class="completed-card"
+              style="margin-top:8px;">
+
+              <div>${escapeHtml(followUp.resolution || "—")}</div>
+
+              <div style="
+                color:#64748b;
+                font-size:13px;
+                margin-top:8px;
+              ">
+                ${escapeHtml(followUp.resolved_by || "—")}
+                ${
+                  followUp.resolved_at
+                    ? " · " + escapeHtml(new Date(followUp.resolved_at).toLocaleString())
+                    : ""
+                }
+              </div>
+
+            </div>
+          `
+          : ""
+      }
+
+      <div class="no-print"
+        style="display:flex;gap:8px;flex-wrap:wrap;margin-top:22px;">
+
+        ${
+          isOpen
+            ? `
+              <button class="primary"
+                onclick="openLogFollowUpUpdate(${followUp.id})">
+                LOG UPDATE
+              </button>
+
+              <button class="secondary"
+                onclick="resolveFollowUp(${followUp.id}, 'detail')">
+                RESOLVE
+              </button>
+
+              ${
+                kind === "watch"
+                  ? `
+                    <button class="secondary"
+                      onclick="changeFollowUpKindToAction(${followUp.id})">
+                      CHANGE TO ACTION / REPAIR
+                    </button>
+                  `
+                  : ""
+              }
+            `
+            : ""
+        }
+
+      </div>
+
+      <h3 style="margin-top:22px;">
+        History (${eventRows.length})
+      </h3>
+
+      ${
+        eventRows.length
+          ? eventRows.map(e => {
+
+              const eventAtTime =
+                e.event_at
+                  ? new Date(e.event_at)
+                  : null;
+
+              const createdAtTime =
+                e.created_at
+                  ? new Date(e.created_at)
+                  : null;
+
+              const showLoggedSeparately =
+                eventAtTime &&
+                createdAtTime &&
+                Math.abs(createdAtTime - eventAtTime) > 60000;
+
+              return `
+                <div class="completed-card"
+                  style="margin-top:10px;">
+
+                  <div style="
+                    display:flex;
+                    justify-content:space-between;
+                    gap:12px;
+                    align-items:flex-start;
+                  ">
+                    <strong>
+                      ${escapeHtml(followUpEventLabel(e.event_type))}
+                    </strong>
+
+                    <span style="color:#64748b;font-size:13px;">
+                      ${
+                        eventAtTime
+                          ? escapeHtml(eventAtTime.toLocaleString())
+                          : "—"
+                      }
+                    </span>
+                  </div>
+
+                  <div style="
+                    color:#64748b;
+                    font-size:13px;
+                    margin-top:4px;
+                  ">
+                    ${escapeHtml(showLabel(e.show_id))}
+                  </div>
+
+                  ${
+                    e.destination
+                      ? `
+                        <div style="margin-top:8px;">
+                          <strong>Destination:</strong>
+                          ${escapeHtml(e.destination)}
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  ${
+                    e.notes
+                      ? `
+                        <div style="margin-top:8px;white-space:pre-wrap;">
+                          ${escapeHtml(e.notes)}
+                        </div>
+                      `
+                      : ""
+                  }
+
+                  <div style="
+                    margin-top:8px;
+                    color:#64748b;
+                    font-size:13px;
+                  ">
+                    ${escapeHtml(e.created_by || "Unknown Engineer")}
+                    ${
+                      showLoggedSeparately
+                        ? ` · logged ${escapeHtml(createdAtTime.toLocaleString())}`
+                        : ""
+                    }
+                  </div>
+
+                </div>
+              `;
+            }).join("")
+          : `
+            <div class="empty"
+              style="margin-top:8px;">
+              No history recorded.
+            </div>
+          `
+      }
+
+    </div>
+  `;
+}
+
+
+function returnFromFollowUpDetail() {
+  const ctx = followUpDetailReturn || { type: "followUpsList" };
+
+  if (ctx.type === "closeout") {
+    showShowCloseout();
+    return;
+  }
+
+  showFollowUps();
+}
+
+
+let logEventAtTouched = false;
+
+async function openLogFollowUpUpdate(id) {
+
+  logEventAtTouched = false;
+
+  const { data: followUp, error } =
+    await sb
+      .from("Follow_Ups")
+      .select("follow_up_kind")
+      .eq("id", id)
+      .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  const kind =
+    followUp.follow_up_kind === "watch" ? "watch" : "action";
+
+  const eventOptions =
+    kind === "watch"
+      ? [
+          { value: "verified_good", label: "Verified Good" },
+          { value: "verified_failed", label: "Verified Failed" },
+          { value: "note", label: "Note" }
+        ]
+      : [
+          { value: "sent_to_shop", label: "Sent to Shop" },
+          { value: "shop_result", label: "Shop Result" },
+          { value: "returned", label: "Returned to Truck" },
+          { value: "installed_tested", label: "Installed / Tested" },
+          { value: "note", label: "Note" }
+        ];
+
+  const nowLocal =
+    new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 19);
+
+  modal.innerHTML = `
+    <h2>Log Update</h2>
+
+    <label>Event Type</label>
+
+    <select id="logEventType"
+      onchange="toggleLogEventDestination()">
+      ${
+        eventOptions
+          .map(o => `<option value="${o.value}">${o.label}</option>`)
+          .join("")
+      }
+    </select>
+
+    <label style="margin-top:14px;">
+      Date / Time
+    </label>
+
+    <input id="logEventAt"
+      type="datetime-local"
+      step="1"
+      value="${nowLocal}"
+      oninput="logEventAtTouched = true;">
+
+    <label style="margin-top:14px;">
+      Show Context
+    </label>
+
+    <select id="logEventShow">
+      ${
+        currentShow
+          ? `
+            <option value="${currentShow.id}" selected>
+              ${escapeHtml(currentShow.show_name || "")}
+            </option>
+          `
+          : ""
+      }
+      <option value="">
+        GENERAL / NO SHOW
+      </option>
+    </select>
+
+    <div id="logEventDestinationWrap"
+      class="hidden"
+      style="margin-top:14px;">
+      <label>Destination</label>
+      <input id="logEventDestination"
+        type="text"
+        placeholder="Example: ABC Repair Shop">
+    </div>
+
+    <label style="margin-top:14px;">
+      Notes
+    </label>
+
+    <textarea id="logEventNotes"
+      placeholder="What happened"></textarea>
+
+    <button class="primary full"
+      style="margin-top:14px;"
+      onclick="saveFollowUpEvent(${id})">
+      SAVE UPDATE
+    </button>
+
+    <button class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+
+  toggleLogEventDestination();
+}
+
+
+function toggleLogEventDestination() {
+
+  const typeEl =
+    document.getElementById("logEventType");
+
+  const wrap =
+    document.getElementById("logEventDestinationWrap");
+
+  if (!typeEl || !wrap) {
+    return;
+  }
+
+  wrap.classList.toggle(
+    "hidden",
+    typeEl.value !== "sent_to_shop"
+  );
+}
+
+
+let saveFollowUpEventInProgress = false;
+
+async function saveFollowUpEvent(id) {
+  if (saveFollowUpEventInProgress) {
+    return;
+  }
+  saveFollowUpEventInProgress = true;
+  try {
+    await saveFollowUpEventImpl(id);
+  } finally {
+    saveFollowUpEventInProgress = false;
+  }
+}
+
+async function saveFollowUpEventImpl(id) {
+
+  const eventType =
+    document.getElementById("logEventType").value;
+
+  const eventAtLocal =
+    document.getElementById("logEventAt").value;
+
+  const eventAt =
+    logEventAtTouched && eventAtLocal
+      ? new Date(eventAtLocal).toISOString()
+      : new Date().toISOString();
+
+  const showValue =
+    document.getElementById("logEventShow").value;
+
+  const showId =
+    showValue
+      ? Number(showValue)
+      : null;
+
+  const destinationInput =
+    document.getElementById("logEventDestination");
+
+  const destination =
+    destinationInput
+      ? destinationInput.value.trim()
+      : "";
+
+  const notes =
+    document.getElementById("logEventNotes").value.trim();
+
+  const { error } = await sb
+    .from("Follow_Up_Events")
+    .insert({
+      follow_up_id: id,
+      show_id: showId,
+      event_type: eventType,
+      event_at: eventAt,
+      destination: destination || null,
+      notes: notes || null,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  closeModal();
+
+  await openFollowUpDetail(id);
+}
+
+
+let changeFollowUpKindInProgress = false;
+
+async function changeFollowUpKindToAction(id) {
+  if (changeFollowUpKindInProgress) {
+    return;
+  }
+  changeFollowUpKindInProgress = true;
+  try {
+    await changeFollowUpKindToActionImpl(id);
+  } finally {
+    changeFollowUpKindInProgress = false;
+  }
+}
+
+async function changeFollowUpKindToActionImpl(id) {
+
+  const confirmed = confirm(
+    "Change this Follow-Up to Action / Repair? This does not affect its history."
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const { error } = await sb
+    .from("Follow_Ups")
+    .update({ follow_up_kind: "action" })
+    .eq("id", id);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await openFollowUpDetail(id);
 }
 
 
@@ -6343,9 +7261,36 @@ async function showFollowUps() {
               <div class="request-card"
                 style="margin-bottom:10px;">
 
-                <strong>
-                  ${escapeHtml(r.title || "Follow-Up")}
-                </strong>
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:12px;
+                  align-items:flex-start;
+                ">
+
+                  <div>
+                    <strong>
+                      ${escapeHtml(r.title || "Follow-Up")}
+                    </strong>
+
+                    ${
+                      r.follow_up_kind === "watch"
+                        ? `
+                          <span class="badge"
+                            style="margin-left:6px;">
+                            WATCH
+                          </span>
+                        `
+                        : ""
+                    }
+                  </div>
+
+                  <button class="small-btn"
+                    onclick="openFollowUpDetail(${r.id}, { type: 'followUpsList' })">
+                    OPEN
+                  </button>
+
+                </div>
 
                 <div style="margin-top:8px;">
                   <strong>Next Action:</strong>
