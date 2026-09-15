@@ -832,6 +832,38 @@ async function login() {
 async function logout() {
   await sb.auth.signOut();
 
+  if (realtimeReconnectTimer) {
+    clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = null;
+  }
+
+  if (safetyPollIntervalId) {
+    clearInterval(safetyPollIntervalId);
+    safetyPollIntervalId = null;
+  }
+
+  if (realtimeChannel) {
+
+    const channelToRemove = realtimeChannel;
+
+    // Clear the reference first, same as scheduleRealtimeReconnect()
+    // does, so the CLOSED status event this removal triggers is
+    // recognized as stale (channel !== realtimeChannel) and does not
+    // schedule a reconnect.
+    realtimeChannel = null;
+
+    try {
+      await sb.removeChannel(channelToRemove);
+    } catch (e) {
+      console.warn(
+        "Truck Help realtime: cleanup on logout failed",
+        e
+      );
+    }
+  }
+
+  realtimeStarted = false;
+
   selectedEngineer = null;
 
   loginView.classList.remove("hidden");
@@ -7129,7 +7161,21 @@ async function loadEngineeringLogEntries() {
 }
 
 
+let addEngineeringLogEntryInProgress = false;
+
 async function addEngineeringLogEntry() {
+  if (addEngineeringLogEntryInProgress) {
+    return;
+  }
+  addEngineeringLogEntryInProgress = true;
+  try {
+    await addEngineeringLogEntryImpl();
+  } finally {
+    addEngineeringLogEntryInProgress = false;
+  }
+}
+
+async function addEngineeringLogEntryImpl() {
   if (!currentShow) {
     return;
   }
@@ -8297,7 +8343,21 @@ async function showEngineers() {
   `;
 }
 
+let addEngineerInProgress = false;
+
 async function addEngineer() {
+  if (addEngineerInProgress) {
+    return;
+  }
+  addEngineerInProgress = true;
+  try {
+    await addEngineerImpl();
+  } finally {
+    addEngineerInProgress = false;
+  }
+}
+
+async function addEngineerImpl() {
   const name =
     document.getElementById("newEngineerName")
       .value.trim();
@@ -8544,7 +8604,21 @@ async function openEditShow() {
 }
 
 
+let saveEditShowInProgress = false;
+
 async function saveEditShow() {
+  if (saveEditShowInProgress) {
+    return;
+  }
+  saveEditShowInProgress = true;
+  try {
+    await saveEditShowImpl();
+  } finally {
+    saveEditShowInProgress = false;
+  }
+}
+
+async function saveEditShowImpl() {
 
   const showName =
     document.getElementById("editShowName")
@@ -8832,7 +8906,21 @@ async function showShows() {
     new Date().toISOString().slice(0,10);
 }
 
+let startShowInProgress = false;
+
 async function startShow() {
+  if (startShowInProgress) {
+    return;
+  }
+  startShowInProgress = true;
+  try {
+    await startShowImpl();
+  } finally {
+    startShowInProgress = false;
+  }
+}
+
+async function startShowImpl() {
 
   const showName =
     document.getElementById("showNameInput")
