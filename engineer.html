@@ -502,7 +502,7 @@ textarea {
 
 .report-type-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0,1fr));
   gap: 8px;
   margin-top: 7px;
 }
@@ -631,6 +631,58 @@ textarea {
   text-align: center;
 }
 
+.official-report-category {
+  margin-top: 22px;
+}
+
+.official-report-category h3 {
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  font-weight: 900;
+}
+
+.official-report-category.action-required h3 {
+  color: #b91c1c;
+  border-bottom: 2px solid #b91c1c;
+}
+
+.official-report-category.for-information h3 {
+  color: #172033;
+  border-bottom: 2px solid #172033;
+}
+
+.disposition-badge {
+  display: inline-block;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  margin-bottom: 10px;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.disposition-action {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.disposition-monitor {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #d97706;
+}
+
+.disposition-fyi {
+  background: #eef2f7;
+  color: #334155;
+  border-color: #94a3b8;
+}
+
 @media print {
   body {
     background: white !important;
@@ -670,6 +722,29 @@ textarea {
     background: white;
     border: 1px solid #ccc;
   }
+
+  .disposition-badge {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .disposition-action {
+    background: #fee2e2 !important;
+    color: #b91c1c !important;
+    border-color: #b91c1c !important;
+  }
+
+  .disposition-monitor {
+    background: #fef3c7 !important;
+    color: #92400e !important;
+    border-color: #d97706 !important;
+  }
+
+  .disposition-fyi {
+    background: #eef2f7 !important;
+    color: #334155 !important;
+    border-color: #94a3b8 !important;
+  }
 }
 
 @media (max-width: 650px) {
@@ -678,6 +753,10 @@ textarea {
   }
 
   .menu-board {
+    grid-template-columns: 1fr;
+  }
+
+  .report-type-tabs {
     grid-template-columns: 1fr;
   }
 
@@ -3558,6 +3637,38 @@ function followUpKindLabel(kind) {
 }
 
 
+const OFFICIAL_REPORT_DISPOSITIONS = [
+  { value: "repair_required", label: "REPAIR REQUIRED" },
+  { value: "replacement_required", label: "REPLACEMENT REQUIRED" },
+  { value: "missing", label: "MISSING" },
+  { value: "monitor_verify", label: "MONITOR / VERIFY — NO ACTION YET" },
+  { value: "fyi", label: "FYI — NO ACTION REQUIRED" }
+];
+
+function officialReportDispositionLabel(value) {
+  const match =
+    OFFICIAL_REPORT_DISPOSITIONS.find(d => d.value === value);
+
+  return match ? match.label : (value || "—");
+}
+
+function officialReportDispositionClass(value) {
+  if (
+    value === "repair_required" ||
+    value === "replacement_required" ||
+    value === "missing"
+  ) {
+    return "disposition-action";
+  }
+
+  if (value === "monitor_verify") {
+    return "disposition-monitor";
+  }
+
+  return "disposition-fyi";
+}
+
+
 async function openRequestDetail(requestId, backContext) {
 
   if (backContext && typeof backContext === "object") {
@@ -3783,6 +3894,11 @@ const fmt = value =>
           <button class="small-btn"
             onclick="openEditEquipment(${request.id})">
             EDIT EQUIPMENT
+          </button>
+
+          <button class="small-btn"
+            onclick="openAddToShowReport(${request.id})">
+            ADD TO SHOW REPORT
           </button>
 
 <button class="small-btn"
@@ -4793,6 +4909,170 @@ async function saveEditEquipmentImpl(requestId) {
       "Equipment identity was updated, but the history note could not be saved:\n\n" +
       noteError.message
     );
+  }
+
+  closeModal();
+
+  await openRequestDetail(requestId);
+}
+
+
+async function openAddToShowReport(requestId) {
+
+  const { data: request, error } =
+    await sb
+      .from("Requests")
+      .select("show_id, equipment_name")
+      .eq("id", requestId)
+      .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  const { data: show, error: showError } =
+    await sb
+      .from("Shows")
+      .select("show_name, venue")
+      .eq("id", request.show_id)
+      .maybeSingle();
+
+  if (showError) {
+    console.error(showError);
+  }
+
+  const showLabel =
+    show
+      ? show.show_name +
+        (show.venue ? " — " + show.venue : "")
+      : "Unknown Show";
+
+  modal.innerHTML = `
+    <h2>Add to Official Show Report</h2>
+
+    <div style="
+      background:#f1f5f9;
+      border-radius:8px;
+      padding:12px;
+      margin-bottom:16px;
+      line-height:1.7;
+    ">
+      <div><strong>Show:</strong> ${escapeHtml(showLabel)}</div>
+      <div><strong>Source Request:</strong> Request #${requestId}</div>
+    </div>
+
+    <label>
+      Subject / Equipment
+    </label>
+
+    <input
+      id="showReportSubject"
+      type="text"
+      placeholder="Example: Camera 5"
+      value="${escapeHtml(request.equipment_name || "")}">
+
+    <label style="margin-top:14px;">
+      Disposition
+    </label>
+
+    <select id="showReportDisposition">
+      <option value="" disabled selected>
+        Select disposition…
+      </option>
+      ${OFFICIAL_REPORT_DISPOSITIONS.map(d => `
+        <option value="${d.value}">${d.label}</option>
+      `).join("")}
+    </select>
+
+    <label style="margin-top:14px;">
+      Management-Facing Summary
+    </label>
+
+    <textarea
+      id="showReportSummary"
+      placeholder="Write the concise official summary for Ops MGR / Eng MGR. State clearly whether action is required."
+    ></textarea>
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="addShowReportItem(${requestId}, ${request.show_id})">
+      ADD TO SHOW REPORT
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+
+let addShowReportItemInProgress = false;
+
+async function addShowReportItem(requestId, showId) {
+  if (addShowReportItemInProgress) {
+    return;
+  }
+  addShowReportItemInProgress = true;
+  try {
+    await addShowReportItemImpl(requestId, showId);
+  } finally {
+    addShowReportItemInProgress = false;
+  }
+}
+
+async function addShowReportItemImpl(requestId, showId) {
+
+  const subject =
+    document.getElementById("showReportSubject")
+      .value.trim();
+
+  const disposition =
+    document.getElementById("showReportDisposition")
+      .value;
+
+  const summary =
+    document.getElementById("showReportSummary")
+      .value.trim();
+
+  if (!subject) {
+    alert("Please enter a subject / equipment description.");
+    return;
+  }
+
+  if (!disposition) {
+    alert("Please select a disposition.");
+    return;
+  }
+
+  if (!summary) {
+    alert("Please enter a management-facing summary.");
+    return;
+  }
+
+  const { error: insertError } = await sb
+    .from("Official_Show_Report_Items")
+    .insert({
+      show_id: showId,
+      source_request_id: requestId,
+      subject,
+      disposition,
+      summary,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (insertError) {
+    alert(insertError.message);
+    return;
   }
 
   closeModal();
@@ -7548,6 +7828,13 @@ async function showReports(selectedShowId = null, selectedType = 'end') {
                 onclick="setReportType('client')">
                 CLIENT DAMAGE / MISSING REPORT
               </button>
+
+              <button
+                id="officialReportTab"
+                class="report-type-tab"
+                onclick="setReportType('official')">
+                OFFICIAL ENGINEERING SHOW REPORT
+              </button>
             </div>
           </div>
 
@@ -7577,7 +7864,9 @@ async function showReports(selectedShowId = null, selectedType = 'end') {
     reportType =
       selectedType === "client"
         ? "client"
-        : "end";
+        : selectedType === "official"
+          ? "official"
+          : "end";
 
     const endTab =
       document.getElementById("endReportTab");
@@ -7585,7 +7874,10 @@ async function showReports(selectedShowId = null, selectedType = 'end') {
     const clientTab =
       document.getElementById("clientReportTab");
 
-    if (endTab && clientTab) {
+    const officialTab =
+      document.getElementById("officialReportTab");
+
+    if (endTab && clientTab && officialTab) {
 
       endTab.classList.toggle(
         "active",
@@ -7595,6 +7887,11 @@ async function showReports(selectedShowId = null, selectedType = 'end') {
       clientTab.classList.toggle(
         "active",
         reportType === "client"
+      );
+
+      officialTab.classList.toggle(
+        "active",
+        reportType === "official"
       );
     }
 
@@ -7612,7 +7909,10 @@ function setReportType(type) {
   const clientTab =
     document.getElementById("clientReportTab");
 
-  if (endTab && clientTab) {
+  const officialTab =
+    document.getElementById("officialReportTab");
+
+  if (endTab && clientTab && officialTab) {
     endTab.classList.toggle(
       "active",
       type === "end"
@@ -7621,6 +7921,11 @@ function setReportType(type) {
     clientTab.classList.toggle(
       "active",
       type === "client"
+    );
+
+    officialTab.classList.toggle(
+      "active",
+      type === "official"
     );
   }
 
@@ -7635,6 +7940,8 @@ function setReportType(type) {
 async function loadSelectedReport(showId) {
   if (reportType === "client") {
     await loadClientReport(showId);
+  } else if (reportType === "official") {
+    await loadOfficialShowReport(showId);
   } else {
     await loadShowReport(showId);
   }
@@ -8208,6 +8515,188 @@ function clientReportItemHtml(r) {
         `
         : ""
       }
+
+    </div>
+  `;
+}
+
+
+async function loadOfficialShowReport(showId) {
+
+  const content =
+    document.getElementById("reportContent");
+
+  const { data: show, error: showError } = await sb
+    .from("Shows")
+    .select("*")
+    .eq("id", showId)
+    .single();
+
+  if (showError) {
+    content.innerHTML =
+      `<div class="error">${escapeHtml(showError.message)}</div>`;
+    return;
+  }
+
+  const { data: items, error: itemsError } = await sb
+    .from("Official_Show_Report_Items")
+    .select("*")
+    .eq("show_id", showId)
+    .order("created_at", { ascending: true });
+
+  if (itemsError) {
+    content.innerHTML =
+      `<div class="error">${escapeHtml(itemsError.message)}</div>`;
+    return;
+  }
+
+  const rows = items || [];
+
+  const actionRequired =
+    rows.filter(i =>
+      i.disposition === "repair_required" ||
+      i.disposition === "replacement_required" ||
+      i.disposition === "missing"
+    );
+
+  const forInformation =
+    rows.filter(i =>
+      i.disposition === "monitor_verify" ||
+      i.disposition === "fyi"
+    );
+
+  content.innerHTML = `
+    <div class="report-sheet">
+
+      <div class="report-title">
+        TRUCK HELP — OFFICIAL ENGINEERING SHOW REPORT
+      </div>
+
+      <div class="report-show">
+        ${escapeHtml(show.show_name || "")}
+      </div>
+
+      <div class="report-meta">
+        <div>
+          <strong>Venue:</strong>
+          ${escapeHtml(show.venue || "—")}
+        </div>
+
+        <div>
+          <strong>Start Date:</strong>
+          ${escapeHtml(show.start_date || "—")}
+        </div>
+
+        <div>
+          <strong>Status:</strong>
+          ${show.active ? "Active" : "Closed"}
+        </div>
+      </div>
+
+      <div class="no-print"
+        style="margin:18px 0;">
+
+        <button class="primary"
+          onclick="printOfficialShowReport()">
+          PRINT REPORT
+        </button>
+      </div>
+
+      ${
+        actionRequired.length
+        ? `
+          <div class="official-report-category action-required">
+            <h3>ACTION REQUIRED (${actionRequired.length})</h3>
+
+            ${actionRequired
+              .map(officialReportItemHtml)
+              .join("")}
+          </div>
+        `
+        : ""
+      }
+
+      ${
+        forInformation.length
+        ? `
+          <div class="official-report-category for-information">
+            <h3>FOR INFORMATION / MONITORING (${forInformation.length})</h3>
+
+            ${forInformation
+              .map(officialReportItemHtml)
+              .join("")}
+          </div>
+        `
+        : ""
+      }
+
+      ${
+        !rows.length
+        ? `
+          <div class="report-none">
+            No items have been published to this show's
+            Official Engineering Show Report.
+          </div>
+        `
+        : ""
+      }
+
+    </div>
+  `;
+}
+
+
+function printOfficialShowReport() {
+  window.print();
+}
+
+
+function officialReportItemHtml(item) {
+
+  const createdAt =
+    item.created_at
+      ? new Date(item.created_at).toLocaleString()
+      : "—";
+
+  return `
+    <div class="report-item">
+
+      <div class="${officialReportDispositionClass(item.disposition)} disposition-badge">
+        ${escapeHtml(officialReportDispositionLabel(item.disposition))}
+      </div>
+
+      <div class="report-item-head">
+        <strong>${escapeHtml(item.subject || "")}</strong>
+      </div>
+
+      <div class="report-note">
+        ${escapeHtml(item.summary || "")}
+      </div>
+
+      <div class="report-item-grid" style="margin-top:9px;">
+
+        ${
+          item.source_request_id
+          ? `
+            <div>
+              <strong>Source Request:</strong>
+              Request #${escapeHtml(String(item.source_request_id))}
+            </div>
+          `
+          : ""
+        }
+
+        <div>
+          <strong>Added by:</strong>
+          ${escapeHtml(item.created_by || "—")}
+        </div>
+
+        <div>
+          <strong>Date:</strong>
+          ${escapeHtml(createdAt)}
+        </div>
+
+      </div>
 
     </div>
   `;
