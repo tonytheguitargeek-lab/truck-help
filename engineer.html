@@ -422,6 +422,31 @@ textarea {
   z-index: 100;
 }
 
+.request-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  max-width: 320px;
+  background: #134086;
+  color: white;
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  z-index: 150;
+  font-size: 14px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.request-toast strong {
+  display: block;
+  font-size: 12px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #9db8e0;
+  margin-bottom: 4px;
+}
+
 .modal {
   width: min(500px, 100%);
   background: white;
@@ -726,6 +751,8 @@ textarea {
   <div id="modal" class="modal"></div>
 </div>
 
+<div id="requestToast" class="request-toast hidden"></div>
+
 <script>
 const SUPABASE_URL = "https://cnqeqehgpidrsuerjzbg.supabase.co";
 const SUPABASE_KEY = "sb_publishable_voofaOaydNBIQvXKMXZ2lA_Daj2GPXU";
@@ -746,7 +773,20 @@ let requestDetailReturn = { type: "history" };
 
 let realtimeStarted = false;
 let knownRequestIds = new Set();
+let knownClaimedBy = new Map();
 let initialRequestLoad = true;
+
+let realtimeChannel = null;
+let realtimeReconnectTimer = null;
+
+let autoRefreshInFlight = false;
+let autoRefreshPending = false;
+
+let safetyPollIntervalId = null;
+
+let requestToastTimeoutId = null;
+
+let sharedAudioCtx = null;
 
 const loginView = document.getElementById("loginView");
 const appView = document.getElementById("appView");
@@ -909,14 +949,41 @@ async function loadRequests() {
 
   const rows = data || [];
 
-  const newIds =
-    rows
-      .filter(r => r.status !== "complete")
-      .map(r => String(r.id))
-      .filter(id => !knownRequestIds.has(id));
-
-  activeRequests =
+  const activeRows =
     rows.filter(r => r.status !== "complete");
+
+  const newRows =
+    activeRows.filter(
+      r => !knownRequestIds.has(String(r.id))
+    );
+
+  const newIds =
+    newRows.map(r => String(r.id));
+
+  // Hand-off detection: compare each request's previously-known
+  // claimed_by (captured on the last load) against its freshly
+  // loaded claimed_by, from this client's own in-memory state -
+  // not the realtime payload, which doesn't reliably carry the old
+  // row. Works the same regardless of whether the change was
+  // discovered via realtime, focus/visibility catch-up, or the
+  // safety poll, since all three funnel through loadRequests().
+  const handoffRows =
+    selectedEngineer
+      ? activeRows.filter(r => {
+
+          const id = String(r.id);
+          const prevClaimedBy = knownClaimedBy.get(id);
+
+          return (
+            knownRequestIds.has(id) &&
+            !!prevClaimedBy &&
+            r.claimed_by === selectedEngineer.name &&
+            prevClaimedBy !== selectedEngineer.name
+          );
+        })
+      : [];
+
+  activeRequests = activeRows;
 
   completedRequests =
     rows.filter(r => r.status === "complete")
@@ -927,13 +994,23 @@ async function loadRequests() {
 
   if (!initialRequestLoad && newIds.length) {
     ding();
+    showNewRequestToast(newRows);
+  }
+
+  if (!initialRequestLoad && handoffRows.length) {
+    ding();
   }
 
   knownRequestIds =
     new Set(
-      rows
-        .filter(r => r.status !== "complete")
-        .map(r => String(r.id))
+      activeRows.map(r => String(r.id))
+    );
+
+  knownClaimedBy =
+    new Map(
+      activeRows.map(
+        r => [String(r.id), r.claimed_by || null]
+      )
     );
 
   initialRequestLoad = false;
@@ -8853,6 +8930,7 @@ async function startShow() {
 
   initialRequestLoad = true;
   knownRequestIds = new Set();
+  knownClaimedBy = new Map();
 
   await showActive();
 }
@@ -9675,6 +9753,7 @@ async function finalizeShowCloseout() {
 
   initialRequestLoad = true;
   knownRequestIds = new Set();
+  knownClaimedBy = new Map();
 
   await showActive();
 }
@@ -9687,56 +9766,248 @@ function startRealtime() {
 
   realtimeStarted = true;
 
-  sb
-    .channel("truck-help-v1")
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "Requests"
-      },
-      async payload => {
-        const oldAssigned =
-          payload.old?.claimed_by;
+  openRealtimeChannel();
 
-        const newAssigned =
-          payload.new?.claimed_by;
+  startSafetyPoll();
+
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (document.visibilityState === "visible") {
+        triggerAutoRefresh();
+      }
+    }
+  );
+
+  window.addEventListener(
+    "focus",
+    () => {
+      triggerAutoRefresh();
+    }
+  );
+}
+
+
+function openRealtimeChannel() {
+
+  if (realtimeChannel) {
+    // A live channel object already exists - never open a second one.
+    return;
+  }
+
+  const channel =
+    sb
+      .channel("truck-help-v1")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "Requests"
+        },
+        async () => {
+          // New-request and hand-off detection both happen inside
+          // loadRequests() itself, by comparing against this client's
+          // own previous in-memory state - not the realtime payload,
+          // which doesn't reliably carry the previous row.
+          await triggerAutoRefresh();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "Cable_Checkouts"
+        },
+        async payload => {
+          console.log(
+            "Cable realtime update:",
+            payload.eventType
+          );
+
+          await loadDashboardCablesOut();
+
+          if (!activeView.classList.contains("hidden")) {
+            renderActive();
+          }
+        }
+      )
+      .subscribe((status, err) => {
+
+        // Ignore status events from a channel that is no longer the
+        // active one - e.g. the CLOSED event our own cleanup call to
+        // sb.removeChannel() generates on the old channel during a
+        // reconnect. Without this, that expected cleanup event would
+        // re-trigger scheduleRealtimeReconnect() on its own.
+        if (channel !== realtimeChannel) {
+          return;
+        }
+
+        if (status === "SUBSCRIBED") {
+          console.log(
+            "Truck Help realtime: subscribed."
+          );
+          return;
+        }
 
         if (
-          selectedEngineer &&
-          newAssigned === selectedEngineer.name &&
-          oldAssigned &&
-          oldAssigned !== selectedEngineer.name
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
         ) {
-          ding();
+          console.warn(
+            "Truck Help realtime: " + status,
+            err || ""
+          );
+
+          scheduleRealtimeReconnect();
         }
+      });
 
-        await loadRequests();
-      }
-    )
-    .on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "Cable_Checkouts"
-      },
-      async payload => {
-        console.log(
-          "Cable realtime update:",
-          payload.eventType
-        );
-
-        await loadDashboardCablesOut();
-
-        if (!activeView.classList.contains("hidden")) {
-          renderActive();
-        }
-      }
-    )
-    .subscribe();
+  realtimeChannel = channel;
 }
+
+
+function scheduleRealtimeReconnect() {
+
+  if (realtimeReconnectTimer) {
+    // A reconnect attempt is already pending - never stack timers
+    // or race multiple simultaneous reconnects.
+    return;
+  }
+
+  const staleChannel = realtimeChannel;
+  realtimeChannel = null;
+
+  realtimeReconnectTimer = setTimeout(async () => {
+
+    realtimeReconnectTimer = null;
+
+    if (staleChannel) {
+      try {
+        await sb.removeChannel(staleChannel);
+      } catch (e) {
+        console.warn(
+          "Truck Help realtime: cleanup failed",
+          e
+        );
+      }
+    }
+
+    openRealtimeChannel();
+
+  }, 5000);
+}
+
+
+function startSafetyPoll() {
+
+  if (safetyPollIntervalId) {
+    return;
+  }
+
+  // 30-second fallback only. Realtime remains the primary path; this
+  // just re-fetches in case a realtime event was ever missed. Skips
+  // the network round-trip entirely when there is no active show.
+  safetyPollIntervalId = setInterval(() => {
+
+    if (!currentShow) {
+      return;
+    }
+
+    triggerAutoRefresh();
+
+  }, 30000);
+}
+
+
+async function triggerAutoRefresh() {
+
+  if (autoRefreshInFlight) {
+    // Something else is already mid-refresh (realtime, poll, focus,
+    // visibility change all funnel through here). Don't start a
+    // second concurrent load - just note that another pass is
+    // needed once the current one finishes, so nothing is lost.
+    autoRefreshPending = true;
+    return;
+  }
+
+  autoRefreshInFlight = true;
+
+  try {
+    await loadRequests();
+  } finally {
+    autoRefreshInFlight = false;
+
+    if (autoRefreshPending) {
+      autoRefreshPending = false;
+      triggerAutoRefresh();
+    }
+  }
+}
+
+
+function showNewRequestToast(newRows) {
+
+  const el =
+    document.getElementById("requestToast");
+
+  if (!el || !newRows || !newRows.length) {
+    return;
+  }
+
+  if (newRows.length === 1) {
+
+    const r = newRows[0];
+
+    const description =
+      r.description || "";
+
+    const shortDescription =
+      description.length > 80
+        ? description.slice(0, 80) + "…"
+        : description;
+
+    el.innerHTML = `
+      <strong>New Request</strong>
+      ${escapeHtml(r.requester_name || "Unknown")}
+      ${
+        r.location
+          ? " — " + escapeHtml(r.location)
+          : ""
+      }
+      ${
+        shortDescription
+          ? `
+            <div style="margin-top:4px;opacity:.85;">
+              ${escapeHtml(shortDescription)}
+            </div>
+          `
+          : ""
+      }
+    `;
+
+  } else {
+
+    el.innerHTML = `
+      <strong>New Requests</strong>
+      ${newRows.length} new requests just came in.
+    `;
+  }
+
+  el.classList.remove("hidden");
+
+  if (requestToastTimeoutId) {
+    clearTimeout(requestToastTimeoutId);
+  }
+
+  requestToastTimeoutId = setTimeout(() => {
+    el.classList.add("hidden");
+    requestToastTimeoutId = null;
+  }, 6000);
+}
+
 
 function ding() {
   try {
@@ -9744,7 +10015,19 @@ function ding() {
       window.AudioContext ||
       window.webkitAudioContext;
 
-    const ctx = new AudioCtx();
+    if (!sharedAudioCtx) {
+      sharedAudioCtx = new AudioCtx();
+    }
+
+    const ctx = sharedAudioCtx;
+
+    if (ctx.state === "suspended") {
+      // Best-effort - browser autoplay rules may still block this
+      // outside a user gesture. The existing try/catch already
+      // covers total audio failure below.
+      ctx.resume().catch(() => {});
+    }
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
