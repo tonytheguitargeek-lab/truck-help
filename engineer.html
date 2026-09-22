@@ -1469,6 +1469,12 @@ function renderActive() {
 
     ${dashboardEngineeringLogHtml()}
 
+    <button class="primary full"
+      style="margin-top:14px;"
+      onclick="openLogItem()">
+      + LOG ITEM
+    </button>
+
     <div class="tabs">
       <button
         class="tab ${requestFilter === "all" ? "active" : ""}"
@@ -1492,6 +1498,162 @@ function renderActive() {
     </div>
   `;
 }
+
+
+function openLogItem() {
+
+  modal.innerHTML = `
+    <h2>Log Item</h2>
+
+    <label>
+      Description
+    </label>
+
+    <textarea
+      id="logItemDescription"
+      placeholder="What's the issue?"
+    ></textarea>
+
+    <label style="margin-top:14px;">
+      Request Type
+    </label>
+
+    <select id="logItemRequestType">
+      <option value="Gear / Supplies">Gear / Supplies</option>
+      <option value="Technical Problem" selected>Technical Problem</option>
+      <option value="Other">Other</option>
+    </select>
+
+    <label style="margin-top:14px;">
+      Department (optional)
+    </label>
+
+    <select id="logItemDepartment">
+      <option value="">Select department...</option>
+      <option>Camera</option>
+      <option>Audio</option>
+      <option>Video</option>
+      <option>Replay / EVS</option>
+      <option>Graphics</option>
+      <option>Production</option>
+      <option>Transmission / RF</option>
+      <option>Utility</option>
+      <option>Engineering</option>
+      <option>Other</option>
+    </select>
+
+    <label style="margin-top:14px;">
+      Location (optional)
+    </label>
+
+    <input
+      id="logItemLocation"
+      type="text"
+      placeholder="Example: Stage Left, Truck, Camera 4">
+
+    <label style="margin-top:14px;">
+      Reported By
+    </label>
+
+    <input
+      id="logItemReportedBy"
+      type="text"
+      value="${escapeHtml(selectedEngineer ? selectedEngineer.name : "")}">
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="logItem()">
+      LOG ITEM
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+
+  const descriptionField =
+    document.getElementById("logItemDescription");
+
+  if (descriptionField) {
+    descriptionField.focus();
+  }
+}
+
+
+let logItemInProgress = false;
+
+async function logItem() {
+  if (logItemInProgress) {
+    return;
+  }
+  logItemInProgress = true;
+  try {
+    await logItemImpl();
+  } finally {
+    logItemInProgress = false;
+  }
+}
+
+async function logItemImpl() {
+
+  const description =
+    document.getElementById("logItemDescription")
+      .value.trim();
+
+  if (!description) {
+    alert("Please enter a description.");
+    return;
+  }
+
+  const requestType =
+    document.getElementById("logItemRequestType")
+      .value;
+
+  const department =
+    document.getElementById("logItemDepartment")
+      .value.trim();
+
+  const location =
+    document.getElementById("logItemLocation")
+      .value.trim();
+
+  const reportedBy =
+    document.getElementById("logItemReportedBy")
+      .value.trim();
+
+  const { data, error } =
+    await sb.rpc("submit_truck_help_request", {
+      p_requester_name: reportedBy,
+      p_department: department,
+      p_location: location,
+      p_phone: "",
+      p_request_type: requestType,
+      p_description: description
+    });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  const requestId =
+    data && data.length ? data[0].request_id : null;
+
+  closeModal();
+
+  if (requestId) {
+    await openRequestDetail(requestId);
+  } else {
+    await loadRequests();
+  }
+}
+
 
 function requestCardHtml(r) {
   const isProgress =
@@ -2931,7 +3093,7 @@ async function showRequestHistory() {
           ">
 
             <div>
-              <strong>Requester:</strong>
+              <strong>Reported By:</strong>
               ${escapeHtml(r.requester_name || "—")}
             </div>
 
@@ -3946,7 +4108,7 @@ const fmt = value =>
       ">
 
         <div>
-          <strong>Requester:</strong>
+          <strong>Reported By:</strong>
           ${escapeHtml(request.requester_name || "—")}
         </div>
 
@@ -8400,7 +8562,7 @@ function clientReportItemHtml(r) {
         </div>
 
         <div>
-          <strong>Requester:</strong>
+          <strong>Reported By:</strong>
           ${escapeHtml(r.requester_name || "—")}
         </div>
 
@@ -8724,7 +8886,7 @@ function reportItemHtml(r) {
         </div>
 
         <div>
-          <strong>Requester:</strong>
+          <strong>Reported By:</strong>
           ${escapeHtml(r.requester_name || "—")}
         </div>
 
