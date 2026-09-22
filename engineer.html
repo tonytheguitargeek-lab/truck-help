@@ -3803,6 +3803,7 @@ const OFFICIAL_REPORT_DISPOSITIONS = [
   { value: "repair_required", label: "REPAIR REQUIRED" },
   { value: "replacement_required", label: "REPLACEMENT REQUIRED" },
   { value: "missing", label: "MISSING" },
+  { value: "show_extra_billable", label: "SHOW EXTRA / BILLABLE — OPS ACTION REQUIRED" },
   { value: "monitor_verify", label: "MONITOR / VERIFY — NO ACTION YET" },
   { value: "fyi", label: "FYI — NO ACTION REQUIRED" }
 ];
@@ -3818,7 +3819,8 @@ function officialReportDispositionClass(value) {
   if (
     value === "repair_required" ||
     value === "replacement_required" ||
-    value === "missing"
+    value === "missing" ||
+    value === "show_extra_billable"
   ) {
     return "disposition-action";
   }
@@ -5081,23 +5083,52 @@ async function saveEditEquipmentImpl(requestId) {
 
 async function openAddToShowReport(requestId) {
 
-  const { data: request, error } =
-    await sb
-      .from("Requests")
-      .select("show_id, equipment_name")
-      .eq("id", requestId)
-      .single();
+  let showId = null;
+  let equipmentName = "";
+  let sourceLine = "";
 
-  if (error) {
-    alert(error.message);
-    return;
+  if (requestId) {
+
+    const { data: request, error } =
+      await sb
+        .from("Requests")
+        .select("show_id, equipment_name")
+        .eq("id", requestId)
+        .single();
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    showId = request.show_id;
+    equipmentName = request.equipment_name || "";
+
+    sourceLine = `
+      <div><strong>Source Request:</strong> Request #${requestId}</div>
+    `;
+
+  } else {
+
+    const select =
+      document.getElementById("reportShowSelect");
+
+    showId =
+      select && select.value
+        ? Number(select.value)
+        : null;
+
+    if (!showId) {
+      alert("Select a show first.");
+      return;
+    }
   }
 
   const { data: show, error: showError } =
     await sb
       .from("Shows")
       .select("show_name, venue")
-      .eq("id", request.show_id)
+      .eq("id", showId)
       .maybeSingle();
 
   if (showError) {
@@ -5121,7 +5152,7 @@ async function openAddToShowReport(requestId) {
       line-height:1.7;
     ">
       <div><strong>Show:</strong> ${escapeHtml(showLabel)}</div>
-      <div><strong>Source Request:</strong> Request #${requestId}</div>
+      ${sourceLine}
     </div>
 
     <label>
@@ -5132,7 +5163,7 @@ async function openAddToShowReport(requestId) {
       id="showReportSubject"
       type="text"
       placeholder="Example: Camera 5"
-      value="${escapeHtml(request.equipment_name || "")}">
+      value="${escapeHtml(equipmentName)}">
 
     <label style="margin-top:14px;">
       Disposition
@@ -5159,7 +5190,7 @@ async function openAddToShowReport(requestId) {
     <button
       class="primary full"
       style="margin-top:16px;"
-      onclick="addShowReportItem(${requestId}, ${request.show_id})">
+      onclick="addShowReportItem(${requestId || "null"}, ${showId})">
       ADD TO SHOW REPORT
     </button>
 
@@ -5239,7 +5270,11 @@ async function addShowReportItemImpl(requestId, showId) {
 
   closeModal();
 
-  await openRequestDetail(requestId);
+  if (requestId) {
+    await openRequestDetail(requestId);
+  } else {
+    await loadOfficialShowReport(showId);
+  }
 }
 
 
@@ -8718,7 +8753,8 @@ async function loadOfficialShowReport(showId) {
     rows.filter(i =>
       i.disposition === "repair_required" ||
       i.disposition === "replacement_required" ||
-      i.disposition === "missing"
+      i.disposition === "missing" ||
+      i.disposition === "show_extra_billable"
     );
 
   const forInformation =
@@ -8756,7 +8792,12 @@ async function loadOfficialShowReport(showId) {
       </div>
 
       <div class="no-print"
-        style="margin:18px 0;">
+        style="margin:18px 0; display:flex; gap:10px; flex-wrap:wrap;">
+
+        <button class="primary"
+          onclick="openAddToShowReport()">
+          + ADD REPORT ITEM
+        </button>
 
         <button class="primary"
           onclick="printOfficialShowReport()">
