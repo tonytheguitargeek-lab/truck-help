@@ -6,6 +6,7 @@
 <title>Truck Help - Engineering</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="qrcode.min.js"></script>
 
 <style>
 * {
@@ -683,6 +684,10 @@ textarea {
   border-color: #94a3b8;
 }
 
+.print-only {
+  display: none;
+}
+
 @media print {
   body {
     background: white !important;
@@ -744,6 +749,10 @@ textarea {
     background: #eef2f7 !important;
     color: #334155 !important;
     border-color: #94a3b8 !important;
+  }
+
+  .print-only {
+    display: block !important;
   }
 }
 
@@ -810,7 +819,7 @@ textarea {
 
     
 <button id="enablePhoneAlertsBtn"
-        class="primary"
+        class="primary no-print"
         style="margin-bottom:12px;"
         onclick="enablePhoneAlerts()">
   ENABLE PHONE ALERTS
@@ -2772,6 +2781,12 @@ function showMenu() {
 
         <span>Repairs, equipment, supplies and missing gear</span>
 
+      </button>
+
+      <button class="menu-card"
+        onclick="showSupplyList()">
+        <strong>Supply List</strong>
+        <span>Items to pick up or order</span>
       </button>
 
       <button class="menu-card"
@@ -5632,6 +5647,13 @@ async function openPastShow(showId) {
       .eq("show_id", showId)
       .order("created_at", { ascending: true });
 
+  const { data: pastShowSupplyItems } =
+    await sb
+      .from("Supply_List_Items")
+      .select("*")
+      .eq("show_id", showId)
+      .order("created_at", { ascending: true });
+
   const { data: engineeringLog, error: engineeringLogError } =
     await sb
       .from("Engineering_Log")
@@ -6091,6 +6113,58 @@ async function openPastShow(showId) {
           : `
             <div class="empty">
               No follow-ups for this show.
+            </div>
+          `
+      }
+
+      <h3 style="margin-top:22px;">
+        Supply List (${(pastShowSupplyItems || []).length})
+      </h3>
+
+      ${
+        pastShowSupplyItems && pastShowSupplyItems.length
+          ? pastShowSupplyItems.map(i => `
+              <div class="completed-card"
+                style="margin-top:10px;">
+
+                <div style="
+                  display:flex;
+                  justify-content:space-between;
+                  gap:12px;
+                ">
+
+                  <strong>
+                    ${i.quantity ? escapeHtml(i.quantity) + " — " : ""}${escapeHtml(i.item)}
+                  </strong>
+
+                  <span class="badge">
+                    ${i.got_it ? "GOT IT" : "NEEDED"}
+                  </span>
+
+                </div>
+
+                <div style="
+                  color:#64748b;
+                  margin-top:4px;
+                ">
+                  ${i.destination === "shop" ? "REQUEST FROM SHOP" : "PURCHASE FIELD / ONLINE"}
+                </div>
+
+                ${
+                  i.notes
+                    ? `
+                      <div style="margin-top:8px;">
+                        ${escapeHtml(i.notes)}
+                      </div>
+                    `
+                    : ""
+                }
+
+              </div>
+            `).join("")
+          : `
+            <div class="empty">
+              No supply list items for this show.
             </div>
           `
       }
@@ -7952,6 +8026,804 @@ async function showFollowUps() {
     }).join("");
 
 }
+
+
+// ============================================================
+// SUPPLY LIST
+// ============================================================
+
+let supplyListViewStatus = "needed";
+
+function setSupplyListViewStatus(status) {
+  supplyListViewStatus = status;
+  showSupplyList();
+}
+
+async function showSupplyList() {
+
+  hideViews();
+
+  menuView.classList.remove("hidden");
+
+  await loadCurrentShow();
+
+  if (!currentShow) {
+    menuView.innerHTML = `
+      <div class="panel">
+
+        <div class="section-header">
+          <div>
+            <h2 style="margin:0;">Supply List</h2>
+            <div class="muted">Items to pick up or order</div>
+          </div>
+
+          <button class="secondary"
+            onclick="showMenu()">
+            BACK
+          </button>
+        </div>
+
+        <p>No active show.</p>
+
+      </div>
+    `;
+    return;
+  }
+
+  const { data: items, error } = await sb
+    .from("Supply_List_Items")
+    .select("*")
+    .eq("show_id", currentShow.id)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    menuView.innerHTML =
+      `<div class="panel">${escapeHtml(error.message)}</div>`;
+    return;
+  }
+
+  const rows = items || [];
+
+  const visibleRows =
+    supplyListViewStatus === "gotit"
+      ? rows.filter(i => i.got_it)
+      : rows.filter(i => !i.got_it);
+
+  const visibleWithPhotos = [];
+
+  for (const item of visibleRows) {
+
+    if (item.photo_storage_path) {
+
+      const { data: signedData, error: signedError } =
+        await sb.storage
+          .from("supply-photos")
+          .createSignedUrl(item.photo_storage_path, 3600);
+
+      visibleWithPhotos.push({
+        ...item,
+        signed_url:
+          signedError
+            ? ""
+            : (signedData?.signedUrl || "")
+      });
+
+    } else {
+      visibleWithPhotos.push({ ...item, signed_url: "" });
+    }
+  }
+
+  const shopItems =
+    visibleWithPhotos.filter(i => i.destination === "shop");
+
+  const purchaseItems =
+    visibleWithPhotos.filter(i => i.destination === "purchase");
+
+  menuView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header no-print">
+        <div>
+          <h2 style="margin:0;">Supply List</h2>
+          <div class="muted">
+            ${escapeHtml(currentShow.show_name)}
+          </div>
+        </div>
+
+        <button class="secondary"
+          onclick="showMenu()">
+          BACK
+        </button>
+      </div>
+
+      <div class="no-print"
+        style="display:flex;gap:8px;margin:18px 0 8px 0;">
+
+        <button
+          class="${supplyListViewStatus === "needed" ? "primary" : "secondary"}"
+          onclick="setSupplyListViewStatus('needed')">
+          NEEDED
+        </button>
+
+        <button
+          class="${supplyListViewStatus === "gotit" ? "primary" : "secondary"}"
+          onclick="setSupplyListViewStatus('gotit')">
+          GOT IT
+        </button>
+
+      </div>
+
+      <div class="no-print"
+        style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px 0;">
+
+        <button class="primary"
+          onclick="openAddSupplyItem()">
+          + ADD ITEM
+        </button>
+
+        <button class="primary"
+          onclick="printSupplyList()">
+          PRINT LIST
+        </button>
+
+      </div>
+
+      <div class="no-print">
+
+        <h3>
+          REQUEST FROM SHOP (${shopItems.length})
+        </h3>
+
+        ${
+          shopItems.length
+            ? shopItems.map(supplyItemCardHtml).join("")
+            : `<div class="empty">No items.</div>`
+        }
+
+        <h3 style="margin-top:22px;">
+          PURCHASE FIELD / ONLINE (${purchaseItems.length})
+        </h3>
+
+        ${
+          purchaseItems.length
+            ? purchaseItems.map(supplyItemCardHtml).join("")
+            : `<div class="empty">No items.</div>`
+        }
+
+      </div>
+
+      <div id="supplyListPrintArea" class="print-only"></div>
+
+    </div>
+  `;
+}
+
+function supplyItemCardHtml(item) {
+
+  const photoBlock =
+    item.photo_storage_path && item.signed_url
+      ? `
+        <img
+          src="${escapeHtml(item.signed_url)}"
+          alt="Reference photo"
+          style="
+            width:100%;
+            max-width:220px;
+            max-height:160px;
+            object-fit:contain;
+            background:#0f172a;
+            border-radius:8px;
+            display:block;
+            margin-top:8px;
+          ">
+      `
+      : "";
+
+  const openLinkButton =
+    item.reference_url
+      ? `
+        <button class="small-btn"
+          onclick='window.open(${JSON.stringify(item.reference_url)}, "_blank")'>
+          OPEN LINK
+        </button>
+      `
+      : "";
+
+  const addPhotoButton =
+    item.photo_storage_path
+      ? ""
+      : `
+        <button class="small-btn"
+          onclick="openAddSupplyPhoto(${item.id})">
+          ADD PHOTO
+        </button>
+      `;
+
+  const gotItButton =
+    !item.got_it
+      ? `
+        <button class="small-btn"
+          onclick="markSupplyItemGotIt(${item.id})">
+          GOT IT
+        </button>
+      `
+      : "";
+
+  const deleteButton =
+    !item.got_it
+      ? `
+        <button class="small-btn"
+          onclick='deleteSupplyItem(${item.id}, ${JSON.stringify(item.photo_storage_path || "")})'>
+          DELETE
+        </button>
+      `
+      : "";
+
+  return `
+    <div class="completed-card" style="margin-top:10px;">
+
+      <div style="
+        display:flex;
+        justify-content:space-between;
+        gap:12px;
+        flex-wrap:wrap;
+      ">
+        <strong>
+          ${item.quantity ? escapeHtml(item.quantity) + " — " : ""}${escapeHtml(item.item)}
+        </strong>
+      </div>
+
+      ${
+        item.notes
+          ? `<div style="color:#64748b;margin-top:6px;">${escapeHtml(item.notes)}</div>`
+          : ""
+      }
+
+      ${photoBlock}
+
+      <div class="no-print"
+        style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+        ${openLinkButton}
+        ${addPhotoButton}
+        ${gotItButton}
+        ${deleteButton}
+      </div>
+
+    </div>
+  `;
+}
+
+function openAddSupplyItem() {
+
+  if (!currentShow) {
+    alert("No active show.");
+    return;
+  }
+
+  modal.innerHTML = `
+    <h2>Add Supply Item</h2>
+
+    <label>
+      Item / Description
+    </label>
+
+    <input
+      id="supplyItemItem"
+      type="text"
+      placeholder="Example: Gaff tape">
+
+    <label style="margin-top:12px;">
+      Quantity (optional)
+    </label>
+
+    <input
+      id="supplyItemQuantity"
+      type="text"
+      placeholder="Example: 2 rolls">
+
+    <label style="margin-top:12px;">
+      Destination
+    </label>
+
+    <select id="supplyItemDestination">
+      <option value="" disabled selected>
+        Select destination…
+      </option>
+      <option value="shop">REQUEST FROM SHOP</option>
+      <option value="purchase">PURCHASE FIELD / ONLINE</option>
+    </select>
+
+    <label style="margin-top:12px;">
+      Notes / Runner Instructions (optional)
+    </label>
+
+    <textarea
+      id="supplyItemNotes"
+      placeholder="Optional notes for the runner"
+    ></textarea>
+
+    <label style="margin-top:12px;">
+      Reference Link (optional)
+    </label>
+
+    <input
+      id="supplyItemReferenceUrl"
+      type="text"
+      placeholder="https://…">
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="addSupplyItem()">
+      ADD ITEM
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+let addSupplyItemInProgress = false;
+
+async function addSupplyItem() {
+  if (addSupplyItemInProgress) {
+    return;
+  }
+  addSupplyItemInProgress = true;
+  try {
+    await addSupplyItemImpl();
+  } finally {
+    addSupplyItemInProgress = false;
+  }
+}
+
+async function addSupplyItemImpl() {
+
+  const item =
+    document.getElementById("supplyItemItem")
+      .value.trim();
+
+  const quantity =
+    document.getElementById("supplyItemQuantity")
+      .value.trim();
+
+  const destination =
+    document.getElementById("supplyItemDestination")
+      .value;
+
+  const notes =
+    document.getElementById("supplyItemNotes")
+      .value.trim();
+
+  const referenceUrl =
+    document.getElementById("supplyItemReferenceUrl")
+      .value.trim();
+
+  if (!item) {
+    alert("Please enter an item / description.");
+    return;
+  }
+
+  if (!destination) {
+    alert("Please select a destination.");
+    return;
+  }
+
+  const { error } = await sb
+    .from("Supply_List_Items")
+    .insert({
+      show_id: currentShow.id,
+      item,
+      quantity: quantity || null,
+      destination,
+      notes: notes || null,
+      reference_url: referenceUrl || null,
+      created_by:
+        selectedEngineer
+          ? selectedEngineer.name
+          : null
+    });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  closeModal();
+
+  supplyListViewStatus = "needed";
+
+  await showSupplyList();
+}
+
+function openAddSupplyPhoto(itemId) {
+
+  modal.innerHTML = `
+    <h2>Add Reference Photo</h2>
+
+    <label>
+      Photo
+    </label>
+
+    <input
+      id="supplyPhotoInput"
+      type="file"
+      accept="image/*">
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="saveSupplyPhoto(${itemId})">
+      SAVE PHOTO
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+}
+
+let saveSupplyPhotoInProgress = false;
+
+async function saveSupplyPhoto(itemId) {
+  if (saveSupplyPhotoInProgress) {
+    return;
+  }
+  saveSupplyPhotoInProgress = true;
+  try {
+    await saveSupplyPhotoImpl(itemId);
+  } finally {
+    saveSupplyPhotoInProgress = false;
+  }
+}
+
+async function saveSupplyPhotoImpl(itemId) {
+
+  const input =
+    document.getElementById("supplyPhotoInput");
+
+  const file =
+    input && input.files
+      ? input.files[0]
+      : null;
+
+  if (!file) {
+    alert("Choose a photo.");
+    return;
+  }
+
+  const originalName = file.name || "photo";
+
+  const dot = originalName.lastIndexOf(".");
+
+  const extension =
+    dot >= 0
+      ? originalName.substring(dot).toLowerCase()
+      : "";
+
+  const uniqueId =
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  const storagePath = `${itemId}/${uniqueId}${extension}`;
+
+  const { error: uploadError } =
+    await sb.storage
+      .from("supply-photos")
+      .upload(
+        storagePath,
+        file,
+        {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: file.type || undefined
+        }
+      );
+
+  if (uploadError) {
+    alert(
+      "Photo upload failed:\n\n" +
+      uploadError.message
+    );
+    return;
+  }
+
+  const { error: updateError } =
+    await sb
+      .from("Supply_List_Items")
+      .update({ photo_storage_path: storagePath })
+      .eq("id", itemId);
+
+  if (updateError) {
+    alert(
+      "Photo uploaded, but the item could not be updated:\n\n" +
+      updateError.message
+    );
+    return;
+  }
+
+  closeModal();
+
+  await showSupplyList();
+}
+
+let markSupplyItemGotItInProgress = false;
+
+async function markSupplyItemGotIt(itemId) {
+  if (markSupplyItemGotItInProgress) {
+    return;
+  }
+  markSupplyItemGotItInProgress = true;
+  try {
+    await markSupplyItemGotItImpl(itemId);
+  } finally {
+    markSupplyItemGotItInProgress = false;
+  }
+}
+
+async function markSupplyItemGotItImpl(itemId) {
+
+  const { error } = await sb
+    .from("Supply_List_Items")
+    .update({ got_it: true })
+    .eq("id", itemId);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await showSupplyList();
+}
+
+let deleteSupplyItemInProgress = false;
+
+async function deleteSupplyItem(itemId, photoStoragePath) {
+  if (deleteSupplyItemInProgress) {
+    return;
+  }
+  deleteSupplyItemInProgress = true;
+  try {
+    await deleteSupplyItemImpl(itemId, photoStoragePath);
+  } finally {
+    deleteSupplyItemInProgress = false;
+  }
+}
+
+async function deleteSupplyItemImpl(itemId, photoStoragePath) {
+
+  if (!window.confirm("Delete this supply item?")) {
+    return;
+  }
+
+  if (photoStoragePath) {
+
+    const { error: storageError } =
+      await sb.storage
+        .from("supply-photos")
+        .remove([photoStoragePath]);
+
+    if (storageError) {
+      alert(
+        "Could not delete photo file:\n\n" +
+        storageError.message
+      );
+      return;
+    }
+  }
+
+  const { error: rowError } =
+    await sb
+      .from("Supply_List_Items")
+      .delete()
+      .eq("id", itemId);
+
+  if (rowError) {
+    alert(rowError.message);
+    return;
+  }
+
+  await showSupplyList();
+}
+
+let printSupplyListInProgress = false;
+
+async function printSupplyList() {
+  if (printSupplyListInProgress) {
+    return;
+  }
+  printSupplyListInProgress = true;
+  try {
+    await printSupplyListImpl();
+  } finally {
+    printSupplyListInProgress = false;
+  }
+}
+
+async function printSupplyListImpl() {
+
+  if (!currentShow) {
+    alert("No active show.");
+    return;
+  }
+
+  const { data: items, error } = await sb
+    .from("Supply_List_Items")
+    .select("*")
+    .eq("show_id", currentShow.id)
+    .eq("got_it", false)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  const rows = items || [];
+
+  const withPhotos = [];
+
+  for (const item of rows) {
+
+    if (item.photo_storage_path) {
+
+      const { data: signedData, error: signedError } =
+        await sb.storage
+          .from("supply-photos")
+          .createSignedUrl(item.photo_storage_path, 3600);
+
+      withPhotos.push({
+        ...item,
+        signed_url:
+          signedError
+            ? ""
+            : (signedData?.signedUrl || "")
+      });
+
+    } else {
+      withPhotos.push({ ...item, signed_url: "" });
+    }
+  }
+
+  const shopItems =
+    withPhotos.filter(i => i.destination === "shop");
+
+  const purchaseItems =
+    withPhotos.filter(i => i.destination === "purchase");
+
+  const printArea =
+    document.getElementById("supplyListPrintArea");
+
+  if (!printArea) {
+    return;
+  }
+
+  printArea.innerHTML = `
+    <h2>TRUCK HELP — SUPPLY LIST</h2>
+    <h3>${escapeHtml(currentShow.show_name)}</h3>
+
+    <h4>REQUEST FROM SHOP</h4>
+    ${
+      shopItems.length
+        ? shopItems.map(printSupplyItemRowHtml).join("")
+        : `<div>No items.</div>`
+    }
+
+    <h4 style="margin-top:24px;">PURCHASE FIELD / ONLINE</h4>
+    ${
+      purchaseItems.length
+        ? purchaseItems.map(printSupplyItemRowHtml).join("")
+        : `<div>No items.</div>`
+    }
+  `;
+
+  for (const item of withPhotos) {
+    if (item.reference_url) {
+      const container =
+        document.getElementById(`supplyListQr_${item.id}`);
+      if (container) {
+        new QRCode(container, {
+          text: item.reference_url,
+          width: 110,
+          height: 110
+        });
+      }
+    }
+  }
+
+  const images =
+    Array.from(printArea.querySelectorAll("img"));
+
+  await Promise.all(
+    images.map(img => {
+      if (img.complete) {
+        return Promise.resolve();
+      }
+      return new Promise(resolve => {
+        img.onload = resolve;
+        img.onerror = resolve;
+      });
+    })
+  );
+
+  window.print();
+}
+
+function printSupplyItemRowHtml(item) {
+  return `
+    <div style="
+      display:flex;
+      gap:14px;
+      align-items:flex-start;
+      border:1px solid #999;
+      border-radius:8px;
+      padding:10px;
+      margin-top:10px;
+      break-inside:avoid;
+    ">
+
+      <div style="
+        width:28px;
+        height:28px;
+        border:3px solid black;
+        flex-shrink:0;
+        margin-top:2px;
+      "></div>
+
+      <div style="flex:1;">
+
+        <div style="font-weight:800;">
+          ${item.quantity ? escapeHtml(item.quantity) + " — " : ""}${escapeHtml(item.item)}
+        </div>
+
+        ${
+          item.notes
+            ? `<div style="margin-top:4px;">${escapeHtml(item.notes)}</div>`
+            : ""
+        }
+
+        ${
+          item.signed_url
+            ? `
+              <img
+                src="${escapeHtml(item.signed_url)}"
+                alt="Reference photo"
+                style="
+                  max-width:140px;
+                  max-height:110px;
+                  object-fit:contain;
+                  margin-top:8px;
+                  display:block;
+                ">
+            `
+            : ""
+        }
+
+      </div>
+
+      ${
+        item.reference_url
+          ? `<div id="supplyListQr_${item.id}" style="flex-shrink:0;"></div>`
+          : ""
+      }
+
+    </div>
+  `;
+}
+
 
 async function showReports(selectedShowId = null, selectedType = 'end') {
   hideViews();
