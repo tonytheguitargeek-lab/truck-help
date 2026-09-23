@@ -491,6 +491,143 @@ textarea {
   margin-top: 10px;
 }
 
+/* Engineering Record */
+.er-card {
+  background: white;
+  color: #172033;
+  border-radius: 10px;
+  padding: 14px 15px;
+  margin-bottom: 10px;
+  border-left: 5px solid #94a3b8;
+}
+
+.er-card.er-new { border-left-color: #f59e0b; }
+.er-card.er-progress { border-left-color: #2563eb; }
+.er-card.er-followup { border-left-color: #ea580c; }
+.er-card.er-resolved { border-left-color: #16a34a; background: #f8faf9; }
+
+.er-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.er-pill.er-new { background: #fef3c7; color: #92400e; }
+.er-pill.er-progress { background: #dbeafe; color: #1e40af; }
+.er-pill.er-followup { background: #ffedd5; color: #9a3412; }
+.er-pill.er-resolved { background: #dcfce7; color: #166534; }
+
+.er-tag {
+  font-size: 11px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-block;
+  margin: 4px 6px 0 0;
+}
+
+.er-tag.er-equip { color: #7c3aed; background: #f3e8ff; }
+
+.er-followup-chip {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border-left: 3px solid #ea580c;
+}
+
+.er-carried {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  color: #6d28d9;
+  background: #f3e8ff;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-top: 6px;
+}
+
+.er-subnotes {
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 2px solid #e2e8f0;
+}
+
+.er-subnote {
+  margin-bottom: 7px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.er-subnote:last-child { margin-bottom: 0; }
+
+.er-note-type {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: #64748b;
+  margin-right: 6px;
+}
+
+.er-notes-toggle {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.er-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 2px 8px;
+}
+
+.er-disclosure h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.er-disclosure .er-chev {
+  color: #94a3b8;
+  font-size: 12px;
+  transition: transform .15s;
+}
+
+.er-disclosure.er-collapsed .er-chev {
+  transform: rotate(-90deg);
+}
+
+.er-disclosure-body.er-collapsed {
+  display: none;
+}
+
+.er-general-note {
+  background: #fbfcfe;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 11px 13px;
+  margin-bottom: 10px;
+}
+
 .no-show {
   background: white;
   color: #172033;
@@ -1381,7 +1518,7 @@ function dashboardEngineeringLogHtml() {
 
         <button
           class="small-btn"
-          onclick="showEngineeringLog()">
+          onclick="showEngineeringRecord()">
           OPEN LOG
         </button>
       </div>
@@ -2750,11 +2887,11 @@ function showMenu() {
 
       <button class="menu-card"
 
-        onclick="showEngineeringLog()">
+        onclick="showEngineeringRecord()">
 
-        <strong>Engineering Log / Handoff</strong>
+        <strong>Engineering Record</strong>
 
-        <span>Show notes and engineer handoff log</span>
+        <span>Issues, fixes, notes and open follow-ups for this show</span>
 
       </button>
 
@@ -5351,6 +5488,11 @@ function returnFromRequestDetail() {
     return;
   }
 
+  if (ctx.type === "engineeringRecord") {
+    showEngineeringRecord();
+    return;
+  }
+
   showRequestHistory();
 }
 
@@ -7297,6 +7439,11 @@ function returnFromFollowUpDetail() {
     return;
   }
 
+  if (ctx.type === "engineeringRecord") {
+    showEngineeringRecord();
+    return;
+  }
+
   showFollowUps();
 }
 
@@ -7549,7 +7696,7 @@ async function changeFollowUpKindToActionImpl(id) {
 }
 
 
-async function showEngineeringLog() {
+async function showEngineeringRecord() {
   hideViews();
   menuView.classList.remove("hidden");
 
@@ -7561,7 +7708,7 @@ async function showEngineeringLog() {
         <div class="section-header">
           <div>
             <h2 style="margin:0;">
-              Engineering Log / Handoff
+              Engineering Record
             </h2>
             <div style="color:#64748b;">
               No active show
@@ -7569,77 +7716,500 @@ async function showEngineeringLog() {
           </div>
 
           <button class="small-btn"
-            onclick="showMenu()">
+            onclick="showMoreTools()">
             BACK
           </button>
         </div>
 
         <div style="margin-top:18px;">
-          Engineering Log is available when a show is active.
+          The Engineering Record is available when a show is active.
         </div>
       </div>
     `;
     return;
   }
 
+  const { data: requestRows, error: requestError } =
+    await sb
+      .from("Requests")
+      .select("*")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending: true });
+
+  if (requestError) {
+    menuView.innerHTML =
+      `<div class="panel">${escapeHtml(requestError.message)}</div>`;
+    return;
+  }
+
+  const requests = requestRows || [];
+  const requestIds = requests.map(r => r.id);
+
+  const { data: noteRows } =
+    requestIds.length
+      ? await sb
+          .from("Request_Notes")
+          .select("*")
+          .in("request_id", requestIds)
+          .order("created_at", { ascending: true })
+      : { data: [] };
+
+  const { data: logRows } =
+    await sb
+      .from("Engineering_Log")
+      .select("*")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending: true });
+
+  const { data: thisShowFollowUpRows } =
+    await sb
+      .from("Follow_Ups")
+      .select("*")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending: true });
+
+  const { data: openFollowUpRows } =
+    await sb
+      .from("Follow_Ups")
+      .select("*")
+      .eq("status", "open")
+      .order("created_at", { ascending: true });
+
+  const requestNotes = noteRows || [];
+  const logEntries = logRows || [];
+  const thisShowFollowUps = thisShowFollowUpRows || [];
+
+  const carriedForwardFollowUps =
+    (openFollowUpRows || [])
+      .filter(f => f.show_id !== currentShow.id);
+
+  const allRelevantFollowUps =
+    thisShowFollowUps.concat(carriedForwardFollowUps);
+
+  const notesByRequest = {};
+  requestNotes.forEach(n => {
+    (notesByRequest[n.request_id] ||= []).push(n);
+  });
+
+  const logByRequest = {};
+  const generalLogEntries = [];
+  logEntries.forEach(entry => {
+    if (entry.request_id) {
+      (logByRequest[entry.request_id] ||= []).push(entry);
+    } else {
+      generalLogEntries.push(entry);
+    }
+  });
+
+  const requestIdSet = new Set(requestIds);
+  const followUpsByRequest = {};
+  const standaloneFollowUps = [];
+
+  allRelevantFollowUps.forEach(f => {
+    if (f.request_id && requestIdSet.has(f.request_id)) {
+      (followUpsByRequest[f.request_id] ||= []).push(f);
+    } else {
+      standaloneFollowUps.push(f);
+    }
+  });
+
+  const openRequests =
+    requests.filter(r => r.status !== "complete");
+
+  const resolvedRequests =
+    requests.filter(r => r.status === "complete");
+
+  const standaloneOpenFollowUps =
+    standaloneFollowUps.filter(f => f.status === "open");
+
+  const standaloneResolvedFollowUps =
+    standaloneFollowUps.filter(f =>
+      f.status === "resolved" &&
+      f.show_id === currentShow.id
+    );
+
+  const attentionCards =
+    openRequests
+      .map(r => ({
+        sortKey: r.created_at,
+        html: erRequestCardHtml(
+          r,
+          notesByRequest[r.id] || [],
+          logByRequest[r.id] || [],
+          followUpsByRequest[r.id] || [],
+          false
+        )
+      }))
+      .concat(
+        standaloneOpenFollowUps.map(f => ({
+          sortKey: f.created_at,
+          html: erFollowUpCardHtml(f, f.show_id !== currentShow.id)
+        }))
+      )
+      .sort((a, b) => new Date(b.sortKey) - new Date(a.sortKey))
+      .map(c => c.html)
+      .join("");
+
+  const resolvedCards =
+    resolvedRequests
+      .map(r => ({
+        sortKey: r.completed_at || r.created_at,
+        html: erRequestCardHtml(
+          r,
+          notesByRequest[r.id] || [],
+          logByRequest[r.id] || [],
+          followUpsByRequest[r.id] || [],
+          true
+        )
+      }))
+      .concat(
+        standaloneResolvedFollowUps.map(f => ({
+          sortKey: f.resolved_at || f.created_at,
+          html: erFollowUpCardHtml(f, false)
+        }))
+      )
+      .sort((a, b) => new Date(b.sortKey) - new Date(a.sortKey))
+      .map(c => c.html)
+      .join("");
+
+  const generalNoteCards =
+    generalLogEntries
+      .slice()
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .map(erGeneralNoteHtml)
+      .join("");
+
   menuView.innerHTML = `
     <div class="panel">
+
       <div class="section-header">
         <div>
           <h2 style="margin:0;">
-            Engineering Log / Handoff
+            Engineering Record
           </h2>
-
           <div style="color:#64748b;">
-            ${escapeHtml(currentShow.show_name || "")}
+            ${escapeHtml(currentShow.show_name || "")} — issues, fixes, notes and open follow-ups for this show
           </div>
         </div>
 
         <button class="small-btn"
-          onclick="showMenu()">
+          onclick="showMoreTools()">
           BACK
         </button>
       </div>
 
-      <div style="margin-top:20px;">
-        <label>
-          New Log Entry
-        </label>
-
-        <textarea
-          id="engineeringLogNote"
-          rows="4"
-          placeholder="Enter show note or handoff information..."
-        ></textarea>
-
-        <label style="margin-top:12px;">
-          Link to Help Request
-        </label>
-
-        <select id="engineeringLogRequest">
-          <option value="">
-            No linked request
-          </option>
-        </select>
-
-        <button
-          class="primary"
-          style="margin-top:14px;"
-          onclick="addEngineeringLogEntry()">
-          ADD LOG ENTRY
+      <div style="margin:16px 0 10px;">
+        <button class="primary full"
+          onclick="openAddEngineeringNote()">
+          + ADD ENGINEERING NOTE
         </button>
       </div>
 
-      <div
-        id="engineeringLogEntries"
-        style="margin-top:24px;">
-        Loading log...
+      <input
+        id="erSearch"
+        type="text"
+        placeholder="Search this show's engineering record…"
+        style="margin-bottom:14px;"
+        oninput="erFilterCards(this.value)">
+
+      <div class="er-disclosure" onclick="erToggleSection('attention', this)">
+        <h3>Needs Attention (${openRequests.length + standaloneOpenFollowUps.length})</h3>
+        <span class="er-chev">▾</span>
+      </div>
+      <div class="er-disclosure-body" id="erBody-attention">
+        ${
+          attentionCards ||
+          `<div class="empty">Nothing open right now.</div>`
+        }
+      </div>
+
+      <div class="er-disclosure" style="margin-top:16px;" onclick="erToggleSection('general', this)">
+        <h3>General Notes (${generalLogEntries.length})</h3>
+        <span class="er-chev">▾</span>
+      </div>
+      <div class="er-disclosure-body" id="erBody-general">
+        ${
+          generalNoteCards ||
+          `<div class="empty">No general notes yet this show.</div>`
+        }
+      </div>
+
+      <div class="er-disclosure er-collapsed" style="margin-top:16px;" onclick="erToggleSection('resolved', this)">
+        <h3>Resolved / History (${resolvedRequests.length + standaloneResolvedFollowUps.length})</h3>
+        <span class="er-chev">▾</span>
+      </div>
+      <div class="er-disclosure-body er-collapsed" id="erBody-resolved">
+        ${
+          resolvedCards ||
+          `<div class="empty">Nothing resolved yet this show.</div>`
+        }
+      </div>
+
+    </div>
+  `;
+}
+
+function erRequestCardHtml(request, notes, logEntries, followUps, resolved) {
+  const statusClass =
+    resolved
+      ? "er-resolved"
+      : request.status === "in-progress"
+        ? "er-progress"
+        : "er-new";
+
+  const pillLabel =
+    resolved
+      ? "Resolved"
+      : request.status === "in-progress"
+        ? "In Progress"
+        : "New";
+
+  const equipTag =
+    request.equipment_name
+      ? `<span class="er-tag er-equip">${escapeHtml(request.equipment_name)}${request.equipment_make_model ? " — " + escapeHtml(request.equipment_make_model) : ""}</span>`
+      : "";
+
+  const metaTags =
+    [request.department, request.location]
+      .filter(Boolean)
+      .map(t => `<span class="er-tag">${escapeHtml(t)}</span>`)
+      .join("") + equipTag;
+
+  const resolutionLine =
+    resolved && request.resolution_notes
+      ? `<div style="margin-top:7px; font-size:12.5px; color:#475569;"><strong>Resolution:</strong> ${escapeHtml(request.resolution_notes)}</div>`
+      : "";
+
+  const subItems =
+    notes
+      .map(n => ({
+        sortKey: n.created_at,
+        html: `
+          <div class="er-subnote">
+            <span class="er-note-type">${escapeHtml(noteTypeLabel(n.note_type))}</span>
+            ${escapeHtml(n.created_by || "")}
+            <div>${escapeHtml(n.notes || "")}</div>
+          </div>
+        `
+      }))
+      .concat(
+        logEntries.map(e => ({
+          sortKey: e.created_at,
+          html: `
+            <div class="er-subnote">
+              <span class="er-note-type">Log Note</span>
+              ${escapeHtml(e.engineer_name || "")}
+              <div>${escapeHtml(e.note || "")}</div>
+            </div>
+          `
+        }))
+      )
+      .sort((a, b) => new Date(a.sortKey) - new Date(b.sortKey))
+      .map(x => x.html)
+      .join("");
+
+  const noteCount = notes.length + logEntries.length;
+  const subToggleId = `er-subnotes-req-${request.id}`;
+
+  const subnotesBlock =
+    subItems
+      ? `
+        <span class="er-notes-toggle" onclick="erToggleNotes('${subToggleId}', this)">
+          ▸ ${noteCount} note${noteCount === 1 ? "" : "s"} on this request
+        </span>
+        <div class="er-subnotes" id="${subToggleId}" style="display:none;">
+          ${subItems}
+        </div>
+      `
+      : "";
+
+  const followUpChips =
+    followUps
+      .map(f => `
+        <div class="er-followup-chip">
+          ↳ Follow-Up ${f.status === "open" ? "open" : "resolved"} — ${escapeHtml(f.category || "")}${f.next_action ? ": " + escapeHtml(f.next_action) : ""}
+        </div>
+      `)
+      .join("");
+
+  return `
+    <div class="er-card ${statusClass}">
+      <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
+        <div style="font-size:13px; font-weight:700;">
+          ${escapeHtml(request.description || "")}
+        </div>
+        <span class="er-pill ${statusClass}">${pillLabel}</span>
+      </div>
+
+      ${metaTags ? `<div style="margin-top:6px;">${metaTags}</div>` : ""}
+
+      ${resolutionLine}
+
+      ${followUpChips}
+
+      ${subnotesBlock}
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:9px; border-top:1px solid #eef1f5;">
+        <button class="small-btn"
+          onclick="openRequestDetail(${request.id}, { type: 'engineeringRecord' })">
+          Request #${request.id} →
+        </button>
       </div>
     </div>
   `;
+}
 
-  await loadEngineeringLogRequestChoices();
-  await loadEngineeringLogEntries();
+function erFollowUpCardHtml(followUp, carried) {
+  const resolved = followUp.status === "resolved";
+  const statusClass = resolved ? "er-resolved" : "er-followup";
+
+  const pillLabel =
+    resolved
+      ? "Follow-Up · Resolved"
+      : "Follow-Up · Open";
+
+  const resolutionLine =
+    resolved && followUp.resolution
+      ? `<div style="margin-top:7px; font-size:12.5px; color:#475569;"><strong>Resolution:</strong> ${escapeHtml(followUp.resolution)}</div>`
+      : "";
+
+  const nextActionLine =
+    !resolved && followUp.next_action
+      ? `<div style="margin-top:7px; font-size:12.5px; color:#475569;"><strong>Next action:</strong> ${escapeHtml(followUp.next_action)}</div>`
+      : "";
+
+  const carriedTag =
+    carried
+      ? `<span class="er-carried">↳ Carried forward</span>`
+      : "";
+
+  return `
+    <div class="er-card ${statusClass}">
+      <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
+        <div style="font-size:13px; font-weight:700;">
+          ${escapeHtml(followUp.title || "")}
+        </div>
+        <span class="er-pill ${statusClass}">${pillLabel}</span>
+      </div>
+
+      ${followUp.category ? `<div style="margin-top:6px;"><span class="er-tag">${escapeHtml(followUp.category)}</span></div>` : ""}
+
+      ${nextActionLine}
+      ${resolutionLine}
+      ${carriedTag}
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:9px; border-top:1px solid #eef1f5;">
+        <button class="small-btn"
+          onclick="openFollowUpDetail(${followUp.id}, { type: 'engineeringRecord' })">
+          Follow-Up #${followUp.id} →
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function erGeneralNoteHtml(entry) {
+  const when = new Date(entry.created_at).toLocaleString();
+
+  return `
+    <div class="er-general-note">
+      <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <strong>${escapeHtml(entry.engineer_name || "")}</strong>
+        <span style="color:#64748b; font-size:12px;">${escapeHtml(when)}</span>
+      </div>
+      <div style="margin-top:7px; white-space:pre-wrap; font-size:13px;">
+        ${escapeHtml(entry.note || "")}
+      </div>
+    </div>
+  `;
+}
+
+function erToggleSection(name, headerEl) {
+  const body = document.getElementById(`erBody-${name}`);
+
+  if (body) {
+    body.classList.toggle("er-collapsed");
+  }
+
+  if (headerEl) {
+    headerEl.classList.toggle("er-collapsed");
+  }
+}
+
+function erToggleNotes(id, toggleEl) {
+  const el = document.getElementById(id);
+
+  if (!el) {
+    return;
+  }
+
+  const open = el.style.display !== "none";
+  el.style.display = open ? "none" : "block";
+
+  if (toggleEl) {
+    const label = toggleEl.textContent.trim().replace(/^[▸▾]\s*/, "");
+    toggleEl.textContent = (open ? "▸ " : "▾ ") + label;
+  }
+}
+
+function erFilterCards(query) {
+  const q = query.trim().toLowerCase();
+
+  document
+    .querySelectorAll("#menuView .er-card, #menuView .er-general-note")
+    .forEach(card => {
+      const match = !q || card.textContent.toLowerCase().includes(q);
+      card.style.display = match ? "" : "none";
+    });
+}
+
+function openAddEngineeringNote() {
+  if (!currentShow) {
+    alert("No active show.");
+    return;
+  }
+
+  modal.innerHTML = `
+    <h2>Add Engineering Note</h2>
+
+    <label>
+      Note
+    </label>
+
+    <textarea
+      id="engineeringLogNote"
+      rows="4"
+      placeholder="Enter a show note, observation, or handoff information..."
+    ></textarea>
+
+    <label style="margin-top:12px;">
+      Link to Request (optional)
+    </label>
+
+    <select id="engineeringLogRequest">
+      <option value="">
+        No linked request
+      </option>
+    </select>
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="addEngineeringLogEntry()">
+      ADD NOTE
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="closeModal()">
+      CANCEL
+    </button>
+  `;
+
+  openModal();
+
+  loadEngineeringLogRequestChoices();
 }
 
 
@@ -7675,85 +8245,6 @@ async function loadEngineeringLogRequestChoices() {
 
     select.appendChild(option);
   }
-}
-
-
-async function loadEngineeringLogEntries() {
-  const container =
-    document.getElementById("engineeringLogEntries");
-
-  if (!container || !currentShow) {
-    return;
-  }
-
-  const { data, error } =
-    await sb
-      .from("Engineering_Log")
-      .select("*")
-      .eq("show_id", currentShow.id)
-      .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error(error);
-
-    container.innerHTML = `
-      <div class="error">
-        ${escapeHtml(error.message)}
-      </div>
-    `;
-    return;
-  }
-
-  if (!data || data.length === 0) {
-    container.innerHTML = `
-      <div style="color:#64748b;">
-        No engineering log entries yet.
-      </div>
-    `;
-    return;
-  }
-
-  container.innerHTML = data.map(entry => {
-    const when =
-      new Date(entry.created_at).toLocaleString();
-
-    const linked =
-      entry.request_id
-        ? `<div style="margin-top:6px;color:#64748b;">
-             Linked to Request #${entry.request_id}
-           </div>`
-        : "";
-
-    return `
-      <div class="request-card"
-        style="margin-bottom:12px;">
-
-        <div style="
-          display:flex;
-          justify-content:space-between;
-          gap:12px;
-          flex-wrap:wrap;
-        ">
-          <strong>
-            ${escapeHtml(entry.engineer_name)}
-          </strong>
-
-          <span style="color:#64748b;">
-            ${escapeHtml(when)}
-          </span>
-        </div>
-
-        <div style="
-          margin-top:10px;
-          white-space:pre-wrap;
-        ">
-          ${escapeHtml(entry.note)}
-        </div>
-
-        ${linked}
-      </div>
-    `;
-  }).join("");
 }
 
 
@@ -7816,13 +8307,9 @@ async function addEngineeringLogEntryImpl() {
     return;
   }
 
-  noteInput.value = "";
+  closeModal();
 
-  if (requestSelect) {
-    requestSelect.value = "";
-  }
-
-  await loadEngineeringLogEntries();
+  await showEngineeringRecord();
 }
 
 async function showFollowUps() {
