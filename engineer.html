@@ -2749,21 +2749,6 @@ function showMenu() {
       </button>
 
       <button class="menu-card"
-        onclick="showCompleted()">
-        <strong>Completed</strong>
-        <span>Current show history</span>
-      </button>
-
-      <button class="menu-card"
-        onclick="showRequestHistory()">
-
-        <strong>Request History</strong>
-
-        <span>Search requests across all shows</span>
-
-      </button>
-
-      <button class="menu-card"
 
         onclick="showEngineeringLog()">
 
@@ -2790,21 +2775,6 @@ function showMenu() {
       </button>
 
       <button class="menu-card"
-        onclick="showReports()">
-        <strong>Reports</strong>
-        <span>End-of-show turnover report</span>
-      </button>
-
-      <button class="menu-card"
-        onclick="window.location.href='signage.html'">
-
-        <strong>QR Codes / Signage</strong>
-
-        <span>View and print Truck Help QR signs</span>
-
-      </button>
-
-      <button class="menu-card"
         onclick="showShows()">
         <strong>Shows</strong>
         <span>Start or close the current show</span>
@@ -2817,12 +2787,6 @@ function showMenu() {
 
         <span>Browse archived productions</span>
 
-      </button>
-
-      <button class="menu-card"
-        onclick="showEngineers()">
-        <strong>Engineers</strong>
-        <span>Add or manage personnel</span>
       </button>
 
       <button class="menu-card"
@@ -2843,6 +2807,87 @@ function showMenu() {
         <span>Sign this browser out</span>
       </button>
 
+      <button class="menu-card"
+        onclick="showMoreTools()">
+        <strong>More / Tools</strong>
+        <span>Cable checkout, history, reports, admin</span>
+      </button>
+
+    </div>
+  `;
+}
+
+function showMoreTools() {
+  hideViews();
+  menuView.classList.remove("hidden");
+
+  menuView.innerHTML = `
+    <div class="panel">
+
+      <div class="section-header">
+
+        <div>
+          <h2 style="margin:0;">
+            More / Tools
+          </h2>
+
+          <div style="color:#64748b;">
+            History, detailed tools and administration
+          </div>
+        </div>
+
+        <button class="small-btn"
+          onclick="showMenu()">
+          BACK
+        </button>
+
+      </div>
+
+      <div class="menu-board" style="margin-top:16px;">
+
+        <button class="menu-card"
+          onclick="showCompleted()">
+          <strong>Completed</strong>
+          <span>Current show history</span>
+        </button>
+
+        <button class="menu-card"
+          onclick="showRequestHistory()">
+
+          <strong>Request History</strong>
+
+          <span>Search requests across all shows</span>
+
+        </button>
+
+        <button class="menu-card"
+          onclick="showReports()">
+          <strong>Reports</strong>
+          <span>End-of-show turnover report</span>
+        </button>
+
+        <button class="menu-card"
+          onclick="window.location.href='cables.html'">
+          <strong>Cable Checkout</strong>
+          <span>Detailed TRIAX / TAC-12 take &amp; return</span>
+        </button>
+
+        <button class="menu-card"
+          onclick="window.location.href='signage.html'">
+
+          <strong>QR Codes / Signage</strong>
+
+          <span>View and print Truck Help QR signs</span>
+
+        </button>
+
+        <button class="menu-card"
+          onclick="showEngineers()">
+          <strong>Engineers</strong>
+          <span>Add or manage personnel</span>
+        </button>
+
+      </div>
     </div>
   `;
 }
@@ -2871,7 +2916,7 @@ async function showRequestHistory() {
         </div>
 
         <button class="small-btn"
-          onclick="showMenu()">
+          onclick="showMoreTools()">
           BACK
         </button>
 
@@ -5926,12 +5971,12 @@ async function openPastShow(showId) {
       ">
 
         <button class="primary"
-          onclick="showReports(${show.id}, 'end')">
+          onclick="showReports(${show.id}, 'end', { type: 'pastShow', showId: ${show.id} })">
           END-OF-SHOW REPORT
         </button>
 
         <button class="small-btn"
-          onclick="showReports(${show.id}, 'client')">
+          onclick="showReports(${show.id}, 'client', { type: 'pastShow', showId: ${show.id} })">
           CLIENT DAMAGE / MISSING REPORT
         </button>
 
@@ -6205,7 +6250,7 @@ function renderCompleted() {
         </div>
 
         <button class="small-btn"
-          onclick="showMenu()">
+          onclick="showMoreTools()">
           BACK
         </button>
       </div>
@@ -8825,7 +8870,7 @@ function printSupplyItemRowHtml(item) {
 }
 
 
-async function showReports(selectedShowId = null, selectedType = 'end') {
+async function showReports(selectedShowId = null, selectedType = 'end', backContext = null) {
   hideViews();
   reportsView.classList.remove("hidden");
 
@@ -8843,6 +8888,13 @@ async function showReports(selectedShowId = null, selectedType = 'end') {
 
   const rows = shows || [];
 
+  const backOnclick =
+    backContext &&
+    backContext.type === "pastShow" &&
+    backContext.showId != null
+      ? `openPastShow(${backContext.showId})`
+      : "showMoreTools()";
+
   reportsView.innerHTML = `
     <div class="panel report-panel">
 
@@ -8855,7 +8907,7 @@ async function showReports(selectedShowId = null, selectedType = 'end') {
         </div>
 
         <button class="small-btn"
-          onclick="showMenu()">
+          onclick="${backOnclick}">
           BACK
         </button>
       </div>
@@ -9849,7 +9901,7 @@ async function showEngineers() {
         <h2 style="margin:0;">Engineers</h2>
 
         <button class="small-btn"
-          onclick="showMenu()">
+          onclick="showMoreTools()">
           BACK
         </button>
       </div>
