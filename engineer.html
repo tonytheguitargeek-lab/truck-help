@@ -939,6 +939,24 @@ textarea {
   </div>
 </div>
 
+<div id="passwordSetupView" class="hidden">
+  <div class="login-wrap panel">
+    <h2>Complete Your Truck Help Login</h2>
+
+    <label>New Password</label>
+    <input id="newPassword" type="password" autocomplete="new-password">
+
+    <label>Confirm New Password</label>
+    <input id="confirmNewPassword" type="password" autocomplete="new-password">
+
+    <button id="completePasswordSetupBtn" class="primary full" style="margin-top:18px;">
+      SET PASSWORD
+    </button>
+
+    <div id="passwordSetupError" class="error"></div>
+  </div>
+</div>
+
 <div id="appView" class="hidden">
 
   <div class="topbar">
@@ -1014,6 +1032,7 @@ let requestToastTimeoutId = null;
 let sharedAudioCtx = null;
 
 const loginView = document.getElementById("loginView");
+const passwordSetupView = document.getElementById("passwordSetupView");
 const appView = document.getElementById("appView");
 const activeView = document.getElementById("activeView");
 const menuView = document.getElementById("menuView");
@@ -1027,8 +1046,21 @@ const modal = document.getElementById("modal");
 document.getElementById("loginBtn")
   .addEventListener("click", login);
 
+document.getElementById("completePasswordSetupBtn")
+  .addEventListener("click", completePasswordSetup);
+
 document.getElementById("menuBtn")
   .addEventListener("click", showMenu);
+
+sb.auth.onAuthStateChange((event, session) => {
+  // Backup only: invite links never fire a dedicated event (Supabase
+  // auth-js only distinguishes PASSWORD_RECOVERY for type=recovery, and
+  // even that is deferred via setTimeout internally), so the real
+  // detection is the synchronous URL check at the top of checkSession().
+  if (event === "PASSWORD_RECOVERY") {
+    enterPasswordSetupPending();
+  }
+});
 
 async function login() {
   document.getElementById("loginError").textContent = "";
@@ -1095,15 +1127,132 @@ async function logout() {
   appView.classList.add("hidden");
 }
 
+function isRecoveryOrInviteLanding() {
+  // Must run synchronously, before any await, so nothing from the
+  // Supabase client's own async startup (which consumes/clears these
+  // same URL params) can run first. Checks both hash and query, same
+  // as auth-js's own parseParametersFromURL — query wins if both are
+  // present. Confirmed against @supabase/auth-js 2.117.2 source: this
+  // client defaults to flowType 'implicit', so type=recovery/type=invite
+  // arrive in the hash fragment alongside access_token, not the query.
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const queryParams = new URLSearchParams(window.location.search);
+  const type = queryParams.get("type") || hashParams.get("type");
+  return type === "recovery" || type === "invite";
+}
+
 async function checkSession() {
+  if (isRecoveryOrInviteLanding()) {
+    await enterPasswordSetupPending();
+    return;
+  }
+
   const { data } = await sb.auth.getSession();
 
   if (data.session) {
+    if (data.session.user?.user_metadata?.truck_help_password_set === false) {
+      showPasswordSetupScreen();
+      return;
+    }
     await initializeApp();
   } else {
     loginView.classList.remove("hidden");
     appView.classList.add("hidden");
   }
+}
+
+function showPasswordSetupScreen() {
+  loginView.classList.add("hidden");
+  appView.classList.add("hidden");
+  passwordSetupView.classList.remove("hidden");
+}
+
+// Guards against URL detection and the PASSWORD_RECOVERY backup listener
+// both calling enterPasswordSetupPending() for the same landing — whichever
+// call arrives second just awaits the first call's in-flight promise
+// instead of starting a duplicate updateUser write.
+let passwordSetupPendingPromise = null;
+
+async function enterPasswordSetupPending() {
+  if (passwordSetupPendingPromise) {
+    return passwordSetupPendingPromise;
+  }
+
+  passwordSetupPendingPromise = (async () => {
+    document.getElementById("passwordSetupError").textContent = "";
+
+    // The session from the invite/recovery link is established
+    // asynchronously by the Supabase client during its own startup;
+    // wait for it before attempting to write to it.
+    await sb.auth.getSession();
+
+    let { error } = await sb.auth.updateUser({
+      data: { truck_help_password_set: false }
+    });
+
+    if (error) {
+      // One retry before treating this as a real, user-visible failure.
+      ({ error } = await sb.auth.updateUser({
+        data: { truck_help_password_set: false }
+      }));
+    }
+
+    // Show the screen regardless of whether the write succeeded — a
+    // detected invite/recovery landing must never fall through into
+    // initializeApp(), write failure or not.
+    showPasswordSetupScreen();
+
+    if (error) {
+      console.error("Truck Help: failed to durably mark password setup pending", error);
+      document.getElementById("passwordSetupError").textContent =
+        "There was a problem preparing your account. Please finish setting your password now without closing this window. If you leave before finishing, use the emailed link again rather than opening Truck Help normally.";
+    }
+  })();
+
+  try {
+    await passwordSetupPendingPromise;
+  } finally {
+    // Reset once settled so a genuinely later landing (a fresh click of
+    // the emailed link) can still trigger a new attempt.
+    passwordSetupPendingPromise = null;
+  }
+}
+
+async function completePasswordSetup() {
+  document.getElementById("passwordSetupError").textContent = "";
+
+  const newPassword =
+    document.getElementById("newPassword").value;
+
+  const confirmNewPassword =
+    document.getElementById("confirmNewPassword").value;
+
+  if (!newPassword || newPassword.length < 8) {
+    document.getElementById("passwordSetupError").textContent =
+      "Password must be at least 8 characters.";
+    return;
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    document.getElementById("passwordSetupError").textContent =
+      "Passwords do not match.";
+    return;
+  }
+
+  const { error } = await sb.auth.updateUser({
+    password: newPassword,
+    data: { truck_help_password_set: true }
+  });
+
+  if (error) {
+    document.getElementById("passwordSetupError").textContent =
+      error.message;
+    return;
+  }
+
+  passwordSetupView.classList.add("hidden");
+
+  await initializeApp();
 }
 
 async function initializeApp() {
