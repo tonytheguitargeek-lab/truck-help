@@ -10518,6 +10518,53 @@ function reportItemHtml(r) {
   `;
 }
 
+// Populated fresh each time showEngineers() runs. Used only for local UI
+// decisions (which controls to render, the self-deactivation guard below);
+// it never substitutes for the server-side authorization that
+// manage-engineer-login performs independently on every call.
+let engineersScreenState = { engineers: [], callerEngineer: null };
+
+function loginManagementRowHtml(e) {
+  if (!e.auth_user_id) {
+    return `
+      <div class="engineer-role">No Login</div>
+      <input id="inviteEmail_${e.id}"
+        type="email"
+        placeholder="name@company.com"
+        style="margin-top:6px;">
+      <button class="small-btn"
+        style="margin-top:6px;"
+        onclick="sendLoginInvite(${e.id})">
+        SEND LOGIN INVITE
+      </button>
+    `;
+  }
+
+  if (e.login_enabled) {
+    return `
+      <div class="engineer-role">
+        ${escapeHtml(e.email || "")} · Login Enabled
+      </div>
+      <button class="small-btn"
+        style="margin-top:6px;"
+        onclick="disableLogin(${e.id})">
+        DISABLE LOGIN
+      </button>
+    `;
+  }
+
+  return `
+    <div class="engineer-role">
+      ${escapeHtml(e.email || "")} · Login Disabled
+    </div>
+    <button class="small-btn"
+      style="margin-top:6px;"
+      onclick="reenableLogin(${e.id})">
+      RE-ENABLE LOGIN
+    </button>
+  `;
+}
+
 async function showEngineers() {
   hideViews();
   engineersView.classList.remove("hidden");
@@ -10534,6 +10581,16 @@ async function showEngineers() {
   }
 
   const engineers = data || [];
+
+  // Resolve the caller's own Engineer row purely for local display
+  // decisions. Never trusted for anything beyond what to render —
+  // manage-engineer-login re-derives admin status itself, server-side.
+  const { data: { user } = {} } = await sb.auth.getUser();
+  const callerEngineer =
+    (user && engineers.find(e => e.auth_user_id === user.id)) || null;
+  const isAdmin = callerEngineer?.is_admin === true;
+
+  engineersScreenState = { engineers, callerEngineer };
 
   engineersView.innerHTML = `
     <div class="panel">
@@ -10578,13 +10635,14 @@ async function showEngineers() {
             <div class="engineer-row ${e.active ? "" : "inactive"}">
               <div>
                 <div class="engineer-name">
-                  ${escapeHtml(e.name)}
+                  ${escapeHtml(e.name)}${isAdmin && e.is_admin ? " (Admin)" : ""}
                 </div>
                 <div class="engineer-role">
                   ${escapeHtml(e.role || "")}
                   ·
                   ${e.active ? "Active" : "Inactive"}
                 </div>
+                ${isAdmin ? loginManagementRowHtml(e) : ""}
               </div>
 
               <button class="small-btn"
@@ -10658,6 +10716,22 @@ async function addEngineerImpl() {
 }
 
 async function toggleEngineer(id, active) {
+  const caller = engineersScreenState.callerEngineer;
+
+  if (
+    !active &&
+    caller &&
+    caller.is_admin === true &&
+    String(caller.id) === String(id)
+  ) {
+    alert(
+      "You can't deactivate your own Engineer row while you're an admin — " +
+      "doing so would block you from login management. Have another admin " +
+      "do this, or use the Supabase dashboard if it's truly necessary."
+    );
+    return;
+  }
+
   const { error } = await sb
     .from("Engineers")
     .update({ active })
@@ -10680,6 +10754,74 @@ async function toggleEngineer(id, active) {
 
   await loadEngineers();
   await showEngineers();
+}
+
+let engineerLoginActionInProgress = false;
+
+async function callManageEngineerLogin(action, engineerId, email) {
+  if (engineerLoginActionInProgress) {
+    return;
+  }
+  engineerLoginActionInProgress = true;
+
+  try {
+    const { data: { session } = {} } = await sb.auth.getSession();
+
+    if (!session) {
+      alert("Your session has expired. Please log in again.");
+      return;
+    }
+
+    const body = { action, engineer_id: engineerId };
+    if (email) {
+      body.email = email;
+    }
+
+    const response = await fetch(
+      "https://cnqeqehgpidrsuerjzbg.functions.supabase.co/manage-engineer-login",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + session.access_token,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      }
+    );
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || result.error) {
+      alert(result.error || ("Request failed (" + response.status + ")."));
+      return;
+    }
+
+    await showEngineers();
+  } catch (e) {
+    alert("Could not complete the request: " + e.message);
+  } finally {
+    engineerLoginActionInProgress = false;
+  }
+}
+
+function sendLoginInvite(engineerId) {
+  const input = document.getElementById("inviteEmail_" + engineerId);
+  const email = input ? input.value.trim() : "";
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    alert("Enter a valid email address.");
+    return;
+  }
+
+  callManageEngineerLogin("invite", engineerId, email);
+}
+
+function disableLogin(engineerId) {
+  callManageEngineerLogin("disable", engineerId);
+}
+
+function reenableLogin(engineerId) {
+  callManageEngineerLogin("reenable", engineerId);
 }
 
 async function chooseEngineer() {
