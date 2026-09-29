@@ -1922,14 +1922,181 @@ async function logItemImpl() {
     document.getElementById("logItemReportedBy")
       .value.trim();
 
+  // Captured now, before the modal content might be replaced by the
+  // duplicate warning below — LOG NEW ANYWAY submits these exact
+  // original values, never re-reading (now possibly gone) form fields.
+  const fields = {
+    description,
+    requestType,
+    department,
+    location,
+    reportedBy
+  };
+
+  const possibleDuplicate =
+    findPossibleDuplicateRequest(description);
+
+  if (possibleDuplicate) {
+    showLogItemDuplicateWarning(possibleDuplicate, fields);
+    return;
+  }
+
+  await submitLogItem(fields);
+}
+
+// Ported from saveManualFollowUpImpl()'s duplicate check — same
+// normalize/word-overlap algorithm and threshold, unchanged, just
+// retargeted at Requests.description instead of Follow_Ups.title.
+// activeRequests is already scoped to the current show and already
+// excludes status === "complete", so no new query is needed.
+function findPossibleDuplicateRequest(description) {
+
+  const normalize = value =>
+    (value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const newWords =
+    normalize(description)
+      .split(" ")
+      .filter(word => word.length > 2);
+
+  return (
+    (activeRequests || []).find(item => {
+
+      const existingDescription =
+        normalize(item.description);
+
+      if (!existingDescription) {
+        return false;
+      }
+
+      const existingWords =
+        existingDescription
+          .split(" ")
+          .filter(word => word.length > 2);
+
+      if (
+        normalize(description) === existingDescription
+      ) {
+        return true;
+      }
+
+      const matchingWords =
+        newWords.filter(word =>
+          existingWords.includes(word)
+        );
+
+      const smallestWordCount =
+        Math.min(
+          newWords.length,
+          existingWords.length
+        );
+
+      return (
+        smallestWordCount >= 2 &&
+        matchingWords.length >=
+          Math.ceil(smallestWordCount * 0.6)
+      );
+    }) || null
+  );
+}
+
+// Holds the originally-entered Log Item fields while the duplicate
+// warning is shown, so LOG NEW ANYWAY submits exactly what was typed —
+// never reconstructed from the warning's own display.
+let pendingLogItemFields = null;
+
+function showLogItemDuplicateWarning(match, fields) {
+
+  pendingLogItemFields = fields;
+
+  const meta =
+    [match.department, match.location]
+      .filter(Boolean)
+      .map(escapeHtml)
+      .join(" · ");
+
+  modal.innerHTML = `
+    <h2>Possible Existing Request</h2>
+
+    <div class="panel" style="margin-top:8px;">
+      <div>
+        <strong>Request #${escapeHtml(String(match.id))}</strong>
+      </div>
+      <div style="margin-top:6px;">
+        ${escapeHtml(match.description || "")}
+      </div>
+      ${
+        meta
+          ? `<div style="margin-top:6px;color:#64748b;">${meta}</div>`
+          : ""
+      }
+    </div>
+
+    <button
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="openExistingFromLogItemWarning(${match.id})">
+      OPEN EXISTING
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="logNewAnywayFromLogItemWarning()">
+      LOG NEW ANYWAY
+    </button>
+
+    <button
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="cancelLogItemWarning()">
+      CANCEL
+    </button>
+  `;
+}
+
+async function openExistingFromLogItemWarning(matchId) {
+  pendingLogItemFields = null;
+  closeModal();
+  await openRequestDetail(matchId);
+}
+
+function cancelLogItemWarning() {
+  pendingLogItemFields = null;
+  closeModal();
+}
+
+async function logNewAnywayFromLogItemWarning() {
+  if (logItemInProgress) {
+    return;
+  }
+  logItemInProgress = true;
+  try {
+    const fields = pendingLogItemFields;
+    pendingLogItemFields = null;
+    if (!fields) {
+      return;
+    }
+    await submitLogItem(fields);
+  } finally {
+    logItemInProgress = false;
+  }
+}
+
+async function submitLogItem(fields) {
+
   const { data, error } =
     await sb.rpc("submit_truck_help_request", {
-      p_requester_name: reportedBy,
-      p_department: department,
-      p_location: location,
+      p_requester_name: fields.reportedBy,
+      p_department: fields.department,
+      p_location: fields.location,
       p_phone: "",
-      p_request_type: requestType,
-      p_description: description
+      p_request_type: fields.requestType,
+      p_description: fields.description
     });
 
   if (error) {
