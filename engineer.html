@@ -13421,6 +13421,212 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
 }
 
 
+// Plain text for ONE issue, for pasting into the Official Engineering Show
+// Report. Built only from fields already on the issue object; nothing is
+// invented. Where a resolution or next action was never recorded, the text
+// says so instead of filling it in.
+function buildCloseoutIssueCopyText(issue) {
+
+  const dateText = iso =>
+    iso ? new Date(iso).toLocaleDateString() : "";
+
+  const sentence = text => {
+    const t = String(text || "").trim();
+    return /[.!?]$/.test(t) ? t : t + ".";
+  };
+
+  const equipmentText = eq =>
+    eq
+      ? [
+          eq.name,
+          eq.makeModel,
+          eq.serial ? "S/N " + eq.serial : null,
+          eq.assetId ? "Asset ID " + eq.assetId : null
+        ].filter(Boolean).join(", ")
+      : "";
+
+  const openedPhrase = f => {
+    const when = dateText(f.createdAt);
+    return "opened" +
+      (f.createdBy ? " by " + f.createdBy : "") +
+      (when ? " on " + when : "");
+  };
+
+  const followUps = issue.followUps || [];
+  const r = issue.request;
+
+  const requestParts = [];
+  const statusParts = [];
+
+
+  if (r) {
+
+    requestParts.push(sentence(r.description || issue.title));
+
+    const when = dateText(r.createdAt);
+
+    if (r.requester || r.department || r.location || when) {
+      requestParts.push(
+        "Reported" +
+        (r.requester ? " by " + r.requester : "") +
+        (r.department ? " (" + r.department + ")" : "") +
+        (r.location ? " at " + r.location : "") +
+        (when ? " on " + when : "") +
+        "."
+      );
+    }
+
+    const equipment =
+      equipmentText(r.equipment) ||
+      followUps.map(f => equipmentText(f.equipment)).find(Boolean) ||
+      "";
+
+    if (equipment) {
+      requestParts.push("Equipment: " + equipment + ".");
+    }
+
+    if (r.status === "complete") {
+
+      const doneOn = dateText(r.completedAt);
+
+      statusParts.push(
+        "Completed" +
+        (doneOn ? " " + doneOn : "") +
+        (r.completedBy ? " by " + r.completedBy : "") +
+        "."
+      );
+
+      statusParts.push(
+        r.resolutionNotes
+          ? sentence(r.resolutionNotes)
+          : "No resolution notes were recorded."
+      );
+
+      if (r.gearLocation) {
+        statusParts.push(
+          "Gear location: " + sentence(r.gearLocation)
+        );
+      }
+
+    } else {
+
+      statusParts.push(
+        "UNRESOLVED — " +
+        (r.status === "in-progress"
+          ? "in progress" +
+            (r.claimedBy ? ", claimed by " + r.claimedBy : "")
+          : "not yet claimed") +
+        "."
+      );
+    }
+
+    followUps.forEach(f => {
+
+      if (f.status === "open") {
+
+        statusParts.push(
+          "OUTSTANDING " +
+          (f.kind === "watch"
+            ? "watch / verify item"
+            : "follow-up") +
+          (f.category ? " (" + f.category + ")" : "") +
+          "."
+        );
+
+        statusParts.push(
+          f.nextAction
+            ? "Next action: " + sentence(f.nextAction)
+            : "No next action recorded."
+        );
+
+      } else {
+
+        const resolvedOn = dateText(f.resolvedAt);
+
+        statusParts.push(
+          "Follow-up resolved" +
+          (resolvedOn ? " " + resolvedOn : "") +
+          (f.resolvedBy ? " by " + f.resolvedBy : "") +
+          (f.resolution ? ": " + sentence(f.resolution) : ".")
+        );
+      }
+    });
+
+
+  } else {
+
+    const f = followUps[0];
+
+    requestParts.push(sentence(f.title));
+
+    if (f.category) {
+      requestParts.push("Category: " + f.category + ".");
+    }
+
+    if (f.origin.type === "carried") {
+      requestParts.push(
+        "Carried forward from " + f.origin.label + "; " +
+        openedPhrase(f) + "."
+      );
+    } else if (f.origin.type === "general") {
+      requestParts.push(
+        "General item (no show); " + openedPhrase(f) + "."
+      );
+    } else {
+      const phrase = openedPhrase(f);
+      requestParts.push(
+        phrase.charAt(0).toUpperCase() + phrase.slice(1) + "."
+      );
+    }
+
+    const equipment = equipmentText(f.equipment);
+
+    if (equipment) {
+      requestParts.push("Equipment: " + equipment + ".");
+    }
+
+    if (f.status === "open") {
+
+      statusParts.push(
+        "OUTSTANDING" +
+        (f.kind === "watch" ? " — watch / verify" : "") +
+        "."
+      );
+
+      statusParts.push(
+        f.nextAction
+          ? "Next action: " + sentence(f.nextAction)
+          : "No next action recorded."
+      );
+
+    } else {
+
+      const resolvedOn = dateText(f.resolvedAt);
+
+      statusParts.push(
+        "RESOLVED" +
+        (resolvedOn ? " " + resolvedOn : "") +
+        (f.resolvedBy ? " by " + f.resolvedBy : "") +
+        "."
+      );
+
+      statusParts.push(
+        f.resolution
+          ? sentence(f.resolution)
+          : "No resolution notes were recorded."
+      );
+    }
+  }
+
+  return (
+    "REQUEST:\n" +
+    requestParts.join(" ") +
+    "\n\nRESOLUTION / STATUS:\n" +
+    statusParts.join(" ")
+  );
+}
+
+
 function renderCloseoutReportHtml(data) {
 
   const fmtDate = iso =>
@@ -13479,6 +13685,15 @@ function renderCloseoutReportHtml(data) {
 
     return html;
   };
+
+  const copyButton = issue => `
+    <div class="no-print" style="margin-top:10px;">
+      <button class="small-btn"
+        onclick="copyCloseoutIssueText('${escapeHtml(issue.key)}', this)">
+        COPY REQUEST / RESOLUTION
+      </button>
+    </div>
+  `;
 
   const followUpBlock = f => `
     <div class="report-note">
@@ -13619,6 +13834,8 @@ function renderCloseoutReportHtml(data) {
           `).join("")
         }
 
+        ${copyButton(issue)}
+
       </div>
     `;
   };
@@ -13669,6 +13886,8 @@ function renderCloseoutReportHtml(data) {
               </div>`
             : ""
         }
+
+        ${copyButton(issue)}
 
       </div>
     `;
@@ -13950,6 +14169,58 @@ function renderCloseoutReportHtml(data) {
 // through the preview does not lose them.
 let closeoutNotesDraft = "";
 
+// The issues behind the preview currently on screen, so each card's copy
+// button can build its text from the same deduplicated data.
+let closeoutPreviewData = null;
+
+async function copyCloseoutIssueText(key, button) {
+
+  const issue =
+    closeoutPreviewData
+      ? closeoutPreviewData.issues.find(i => i.key === key)
+      : null;
+
+  if (!issue) {
+    alert("This report preview is out of date. Please reopen the preview.");
+    return;
+  }
+
+  const text = buildCloseoutIssueCopyText(issue);
+
+  let copied = false;
+
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch (e) {
+    try {
+      const helper = document.createElement("textarea");
+      helper.value = text;
+      helper.setAttribute("readonly", "");
+      helper.style.position = "fixed";
+      helper.style.opacity = "0";
+      document.body.appendChild(helper);
+      helper.select();
+      copied = document.execCommand("copy");
+      document.body.removeChild(helper);
+    } catch (e2) {
+      copied = false;
+    }
+  }
+
+  if (!copied) {
+    window.prompt("Copy this text (Cmd/Ctrl + C):", text);
+    return;
+  }
+
+  if (button) {
+    const original = button.dataset.label || button.textContent;
+    button.dataset.label = original;
+    button.textContent = "COPIED";
+    setTimeout(() => { button.textContent = original; }, 1500);
+  }
+}
+
 let closeoutPreviewInProgress = false;
 
 async function previewCloseoutReport() {
@@ -13998,6 +14269,8 @@ async function previewCloseoutReportImpl() {
         sources,
         closeoutNotesDraft.trim()
       );
+
+    closeoutPreviewData = data;
 
     reportHtml = renderCloseoutReportHtml(data);
 
