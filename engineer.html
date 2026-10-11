@@ -11688,6 +11688,155 @@ async function showShowCloseout() {
     );
 
 
+  // Open follow-ups from EVERY show, so earlier unresolved items are
+  // visible at closeout. Rows keep their original show_id; this only
+  // reads and groups them.
+
+  const { data: allOpenFollowUps, error: allOpenError } =
+    await sb
+      .from("Follow_Ups")
+      .select("*")
+      .eq("status", "open")
+      .order("created_at", { ascending:true });
+
+  if (allOpenError) {
+    showsView.innerHTML =
+      `<div class="panel">
+        <div class="error">
+          ${escapeHtml(allOpenError.message)}
+        </div>
+      </div>`;
+    return;
+  }
+
+  const allOpenRows = allOpenFollowUps || [];
+
+  const carriedFollowUps =
+    allOpenRows.filter(
+      f =>
+        f.show_id !== null &&
+        f.show_id !== undefined &&
+        f.show_id !== currentShow.id
+    );
+
+  const generalFollowUps =
+    allOpenRows.filter(
+      f =>
+        f.show_id === null ||
+        f.show_id === undefined
+    );
+
+  const totalOutstandingFollowUps =
+    openFollowUps.length +
+    carriedFollowUps.length +
+    generalFollowUps.length;
+
+  const carriedShowIds =
+    Array.from(
+      new Set(carriedFollowUps.map(f => f.show_id))
+    );
+
+  let carriedShowMap = new Map();
+
+  if (carriedShowIds.length) {
+
+    const { data: carriedShows, error: carriedShowsError } =
+      await sb
+        .from("Shows")
+        .select("id, show_name, venue")
+        .in("id", carriedShowIds);
+
+    if (carriedShowsError) {
+      console.error(carriedShowsError);
+    } else {
+      carriedShowMap =
+        new Map(
+          (carriedShows || []).map(s => [s.id, s])
+        );
+    }
+  }
+
+  const carriedShowLabel = sid => {
+
+    const show = carriedShowMap.get(sid);
+
+    return show
+      ? show.show_name +
+        (show.venue ? " — " + show.venue : "")
+      : ("Show #" + sid);
+  };
+
+  const closeoutFollowUpCardHtml = (f, originLine) => `
+
+    <div class="completed-card"
+      style="margin-top:8px;">
+
+      <div style="
+        display:flex;
+        justify-content:space-between;
+        gap:12px;
+        align-items:flex-start;
+      ">
+
+        <div>
+
+          <strong>
+            ${escapeHtml(f.title || "Follow-Up")}
+          </strong>
+
+          <div style="
+            color:#64748b;
+            font-size:13px;
+            margin-top:4px;
+          ">
+            ${escapeHtml(f.category || "—")}
+          </div>
+
+          <div style="
+            color:#64748b;
+            font-size:13px;
+            margin-top:4px;
+          ">
+            ${originLine}
+            ·
+            Opened ${
+              f.created_at
+                ? escapeHtml(
+                    new Date(f.created_at)
+                      .toLocaleDateString()
+                  )
+                : "—"
+            }
+          </div>
+
+          ${
+            f.next_action
+              ? `
+                <div style="
+                  margin-top:5px;
+                ">
+                  <strong>Next Action:</strong>
+                  ${escapeHtml(f.next_action)}
+                </div>
+              `
+              : ""
+          }
+
+        </div>
+
+        <button
+          class="small-btn"
+          onclick="openCloseoutFollowUp(${f.id})">
+          OPEN
+        </button>
+
+      </div>
+
+    </div>
+
+  `;
+
+
   // ------------------------------------------------
   // PHOTOS
   // ------------------------------------------------
@@ -11783,7 +11932,7 @@ async function showShowCloseout() {
 
   const hasOutstanding =
     openRequests.length > 0 ||
-    openFollowUps.length > 0 ||
+    totalOutstandingFollowUps > 0 ||
     cablesStillOut.length > 0;
 
 
@@ -11892,6 +12041,23 @@ async function showShowCloseout() {
               This show still has outstanding engineering items.
               Review them below before closing, or use
               CLOSE SHOW ANYWAY when appropriate.
+
+              ${
+                totalOutstandingFollowUps > 0
+                  ? `
+                    <div style="
+                      margin-top:8px;
+                      font-weight:700;
+                    ">
+                      Outstanding follow-ups:
+                      ${totalOutstandingFollowUps} total
+                      (${openFollowUps.length} this show,
+                      ${carriedFollowUps.length} carried forward,
+                      ${generalFollowUps.length} general / no show)
+                    </div>
+                  `
+                  : ""
+              }
             </div>
           `
           : `
@@ -11939,9 +12105,27 @@ async function showShowCloseout() {
         )}
 
         ${closeoutAuditBox(
-          "Open Follow-Ups",
+          "Open Follow-Ups (This Show)",
           openFollowUps.length,
           openFollowUps.length > 0
+        )}
+
+        ${closeoutAuditBox(
+          "Carried Forward From Earlier Shows",
+          carriedFollowUps.length,
+          carriedFollowUps.length > 0
+        )}
+
+        ${closeoutAuditBox(
+          "General / No-Show Follow-Ups",
+          generalFollowUps.length,
+          generalFollowUps.length > 0
+        )}
+
+        ${closeoutAuditBox(
+          "Total Outstanding Follow-Ups",
+          totalOutstandingFollowUps,
+          totalOutstandingFollowUps > 0
         )}
 
         ${closeoutAuditBox(
@@ -12043,7 +12227,7 @@ async function showShowCloseout() {
         openFollowUps.length
           ? `
             <h3 style="margin-top:26px;">
-              Open Follow-Ups (${openFollowUps.length})
+              Open Follow-Ups — This Show (${openFollowUps.length})
             </h3>
 
             ${openFollowUps.map(f => `
@@ -12099,6 +12283,45 @@ async function showShowCloseout() {
 
             `).join("")}
 
+          `
+          : ""
+      }
+
+
+      ${
+        carriedFollowUps.length
+          ? `
+            <h3 style="margin-top:26px;">
+              Carried Forward From Earlier Shows
+              (${carriedFollowUps.length})
+            </h3>
+
+            ${carriedFollowUps.map(f =>
+              closeoutFollowUpCardHtml(
+                f,
+                "Originally from: " +
+                  escapeHtml(carriedShowLabel(f.show_id))
+              )
+            ).join("")}
+          `
+          : ""
+      }
+
+
+      ${
+        generalFollowUps.length
+          ? `
+            <h3 style="margin-top:26px;">
+              General / No-Show Follow-Ups
+              (${generalFollowUps.length})
+            </h3>
+
+            ${generalFollowUps.map(f =>
+              closeoutFollowUpCardHtml(
+                f,
+                "GENERAL / NO SHOW"
+              )
+            ).join("")}
           `
           : ""
       }
@@ -12330,18 +12553,59 @@ async function finalizeShowCloseout() {
 
   const followRows = followUps || [];
 
+  // openFollowUps stays "open follow-ups originating in THIS show" —
+  // that is what closeout_open_followups has always recorded.
   const openFollowUps =
     followRows.filter(
       f => f.status === "open"
     ).length;
 
 
-  if (openRequests || openFollowUps) {
+  // Follow-ups still open from other shows (or with no show) are
+  // counted separately, for the confirmation only.
+  const { data: allOpenFollowUps, error: allOpenError } =
+    await sb
+      .from("Follow_Ups")
+      .select("id,show_id")
+      .eq("status", "open");
+
+  if (allOpenError) {
+    alert(allOpenError.message);
+    return;
+  }
+
+  const allOpenRows = allOpenFollowUps || [];
+
+  const carriedFollowUps =
+    allOpenRows.filter(
+      f =>
+        f.show_id !== null &&
+        f.show_id !== undefined &&
+        f.show_id !== currentShow.id
+    ).length;
+
+  const generalFollowUps =
+    allOpenRows.filter(
+      f =>
+        f.show_id === null ||
+        f.show_id === undefined
+    ).length;
+
+  const totalOutstandingFollowUps =
+    openFollowUps +
+    carriedFollowUps +
+    generalFollowUps;
+
+
+  if (openRequests || totalOutstandingFollowUps) {
 
     const proceed = window.confirm(
       "Outstanding engineering items remain.\n\n" +
       `${openRequests} active request(s)\n` +
-      `${openFollowUps} open follow-up(s)\n\n` +
+      `${totalOutstandingFollowUps} open follow-up(s):\n` +
+      `   ${openFollowUps} from this show\n` +
+      `   ${carriedFollowUps} carried forward from earlier shows\n` +
+      `   ${generalFollowUps} general / no show\n\n` +
       "Close the show anyway?"
     );
 
