@@ -12397,8 +12397,9 @@ async function showShowCloseout() {
       <textarea
         id="closeoutNotes"
         rows="5"
+        oninput="closeoutNotesDraft = this.value"
         placeholder="Final engineering handoff notes, outstanding equipment, shipping, repair status, or other closeout information..."
-      ></textarea>
+      >${escapeHtml(closeoutNotesDraft)}</textarea>
 
 
       <div style="
@@ -12407,6 +12408,12 @@ async function showShowCloseout() {
         flex-wrap:wrap;
         margin-top:20px;
       ">
+
+        <button
+          class="primary"
+          onclick="previewCloseoutReport()">
+          PREVIEW REPORT
+        </button>
 
         ${
           hasOutstanding
@@ -12666,6 +12673,8 @@ async function finalizeShowCloseout() {
 
   currentShow = null;
 
+  closeoutNotesDraft = "";
+
   activeRequests = [];
   completedRequests = [];
 
@@ -12674,6 +12683,1370 @@ async function finalizeShowCloseout() {
   knownClaimedBy = new Map();
 
   await showActive();
+}
+
+
+// =====================================================================
+// SHOW CLOSEOUT REPORT PREVIEW (read-only)
+// =====================================================================
+// Three layers, so the report data could later be saved as a historical
+// snapshot at closeout (not implemented):
+//
+//   fetchCloseoutReportSources()  reads rows from Supabase (SELECT only)
+//   buildCloseoutReportData()     pure: rows in, plain JSON-able object out
+//   renderCloseoutReportHtml()    pure: that object in, HTML string out
+//
+// Deduplication uses record IDs only (no text matching): an issue is a
+// Request of this show, or a Follow-Up that is not attached to one. A
+// Follow-Up with request_id of a Request in this show, that Request's
+// notes, log entries and published official items are all attached to the
+// Request's single card. Each issue has ONE primary placement but can
+// carry several action labels.
+
+const CLOSEOUT_LABEL_TEXT = {
+  truck_damage: "Truck damage",
+  repair: "Repair needed",
+  broken_gear: "Broken gear",
+  replacement: "Replacement needed",
+  lost_missing: "Lost / missing",
+  supplies: "Supplies to order",
+  billable: "Billable show extra",
+  monitor: "Monitor / verify",
+  outstanding: "Outstanding"
+};
+
+const CLOSEOUT_LABEL_ORDER = [
+  "truck_damage",
+  "repair",
+  "broken_gear",
+  "replacement",
+  "lost_missing",
+  "supplies",
+  "billable",
+  "monitor",
+  "outstanding"
+];
+
+const CLOSEOUT_EQUIPMENT_LABELS = [
+  "repair",
+  "broken_gear",
+  "replacement",
+  "lost_missing"
+];
+
+const CLOSEOUT_LABEL_TONE = {
+  truck_damage: "red",
+  repair: "red",
+  broken_gear: "red",
+  replacement: "red",
+  lost_missing: "red",
+  billable: "red",
+  supplies: "slate",
+  monitor: "amber",
+  outstanding: "amber"
+};
+
+const CLOSEOUT_TONE_STYLE = {
+  red: "background:#fee2e2;color:#b91c1c;border:1px solid #b91c1c;",
+  amber: "background:#fef3c7;color:#92400e;border:1px solid #d97706;",
+  slate: "background:#eef2f7;color:#334155;border:1px solid #94a3b8;"
+};
+
+// Explicit field values only. Nothing is inferred from descriptions.
+function closeoutLabelForCategory(category) {
+  switch (category) {
+    case "Truck Damage": return "truck_damage";
+    case "Repair Needed": return "repair";
+    case "Broken Gear": return "broken_gear";
+    case "Equipment / Replacement Needed": return "replacement";
+    case "Lost / Missing Gear": return "lost_missing";
+    case "Lost / Missing Equipment": return "lost_missing";
+    case "Supplies to Order": return "supplies";
+    default: return null;
+  }
+}
+
+function closeoutLabelForDisposition(disposition) {
+  switch (disposition) {
+    case "repair_required": return "repair";
+    case "replacement_required": return "replacement";
+    case "missing": return "lost_missing";
+    case "show_extra_billable": return "billable";
+    case "monitor_verify": return "monitor";
+    default: return null;
+  }
+}
+
+
+async function fetchCloseoutReportSources(show) {
+
+  const warnings = [];
+
+  const must = (result, what) => {
+    if (result.error) {
+      throw new Error(what + ": " + result.error.message);
+    }
+    return result.data || [];
+  };
+
+  const [
+    requestsResult,
+    logResult,
+    thisShowFollowUpsResult,
+    openFollowUpsResult,
+    resolvedEventsResult,
+    officialResult,
+    crewResult,
+    cablesResult
+  ] = await Promise.all([
+
+    sb.from("Requests")
+      .select("*")
+      .eq("show_id", show.id)
+      .order("created_at", { ascending: true }),
+
+    sb.from("Engineering_Log")
+      .select("*")
+      .eq("show_id", show.id)
+      .order("created_at", { ascending: true }),
+
+    sb.from("Follow_Ups")
+      .select("*")
+      .eq("show_id", show.id)
+      .order("created_at", { ascending: true }),
+
+    sb.from("Follow_Ups")
+      .select("*")
+      .eq("status", "open")
+      .order("created_at", { ascending: true }),
+
+    sb.from("Follow_Up_Events")
+      .select("follow_up_id")
+      .eq("event_type", "resolved")
+      .eq("show_id", show.id),
+
+    sb.from("Official_Show_Report_Items")
+      .select("*")
+      .eq("show_id", show.id)
+      .order("created_at", { ascending: true }),
+
+    sb.from("Show_Engineers")
+      .select("sort_order, Engineers ( name, role )")
+      .eq("show_id", show.id)
+      .order("sort_order", { ascending: true }),
+
+    sb.from("Cable_Checkouts")
+      .select("id, cable_type, cable_length, created_at")
+      .eq("action", "TAKE")
+      .is("returned_at", null)
+      .order("created_at", { ascending: true })
+  ]);
+
+  const requests = must(requestsResult, "Requests");
+  const logEntries = must(logResult, "Engineering log");
+  const thisShowFollowUps = must(thisShowFollowUpsResult, "Follow-ups");
+  const openFollowUps = must(openFollowUpsResult, "Open follow-ups");
+  const resolvedEvents = must(resolvedEventsResult, "Follow-up history");
+  const officialItems = must(officialResult, "Official report items");
+
+  let crew = [];
+
+  if (crewResult.error) {
+    console.error(crewResult.error);
+    warnings.push("Engineering crew could not be loaded.");
+  } else {
+    crew =
+      (crewResult.data || [])
+        .map(row => row.Engineers)
+        .filter(Boolean)
+        .map(e => ({ name: e.name || "", role: e.role || "" }));
+  }
+
+  let cablesOut = [];
+
+  if (cablesResult.error) {
+    console.error(cablesResult.error);
+    warnings.push("Cables still out could not be loaded.");
+  } else {
+    cablesOut =
+      (cablesResult.data || []).map(c => ({
+        type: c.cable_type || "Cable",
+        length: c.cable_length || "",
+        takenAt: c.created_at || null
+      }));
+  }
+
+
+  // Second stage: things that depend on the first.
+
+  const requestIds = requests.map(r => r.id);
+
+  const knownFollowUpIds =
+    new Set(
+      thisShowFollowUps.concat(openFollowUps).map(f => f.id)
+    );
+
+  // Follow-ups resolved during THIS show but originating elsewhere.
+  const missingResolvedIds =
+    Array.from(
+      new Set(resolvedEvents.map(e => e.follow_up_id))
+    ).filter(id => !knownFollowUpIds.has(id));
+
+  const empty = { data: [], error: null };
+
+  const [
+    notesResult,
+    photosResult,
+    resolvedFollowUpsResult
+  ] = await Promise.all([
+
+    requestIds.length
+      ? sb.from("Request_Notes")
+          .select("*")
+          .in("request_id", requestIds)
+          .order("created_at", { ascending: true })
+      : Promise.resolve(empty),
+
+    requestIds.length
+      ? sb.from("Request_Photos")
+          .select("id, request_id")
+          .in("request_id", requestIds)
+      : Promise.resolve(empty),
+
+    missingResolvedIds.length
+      ? sb.from("Follow_Ups")
+          .select("*")
+          .in("id", missingResolvedIds)
+      : Promise.resolve(empty)
+  ]);
+
+  const requestNotes = must(notesResult, "Request notes");
+  const resolvedFollowUps =
+    must(resolvedFollowUpsResult, "Resolved follow-ups");
+
+  const photoCounts = {};
+
+  if (photosResult.error) {
+    console.error(photosResult.error);
+    warnings.push("Photo counts could not be loaded.");
+  } else {
+    (photosResult.data || []).forEach(p => {
+      photoCounts[p.request_id] =
+        (photoCounts[p.request_id] || 0) + 1;
+    });
+  }
+
+
+  // Labels for the original show of any follow-up from another show.
+
+  const originShowIds =
+    Array.from(
+      new Set(
+        thisShowFollowUps
+          .concat(openFollowUps, resolvedFollowUps)
+          .map(f => f.show_id)
+          .filter(
+            sid =>
+              sid !== null &&
+              sid !== undefined &&
+              sid !== show.id
+          )
+      )
+    );
+
+  const originShowLabels = {};
+
+  if (originShowIds.length) {
+
+    const { data: originShows, error: originShowsError } =
+      await sb
+        .from("Shows")
+        .select("id, show_name, venue")
+        .in("id", originShowIds);
+
+    if (originShowsError) {
+      console.error(originShowsError);
+      warnings.push(
+        "Some original show names could not be loaded."
+      );
+    } else {
+      (originShows || []).forEach(s => {
+        originShowLabels[s.id] =
+          (s.show_name || ("Show #" + s.id)) +
+          (s.venue ? " — " + s.venue : "");
+      });
+    }
+  }
+
+  return {
+    requests,
+    requestNotes,
+    photoCounts,
+    logEntries,
+    thisShowFollowUps,
+    openFollowUps,
+    resolvedFollowUps,
+    officialItems,
+    crew,
+    cablesOut,
+    originShowLabels,
+    warnings
+  };
+}
+
+
+function buildCloseoutReportData(show, src, closeoutNotes) {
+
+  const showId = show.id;
+
+  const requestIdSet =
+    new Set(src.requests.map(r => r.id));
+
+  const originFor = sid => {
+
+    if (sid === null || sid === undefined) {
+      return {
+        type: "general",
+        showId: null,
+        label: "General / No Show"
+      };
+    }
+
+    if (sid === showId) {
+      return {
+        type: "this_show",
+        showId: sid,
+        label: "This show"
+      };
+    }
+
+    return {
+      type: "carried",
+      showId: sid,
+      label:
+        (src.originShowLabels || {})[sid] ||
+        ("Show #" + sid)
+    };
+  };
+
+  const equipmentFor = (name, makeModel, serial, assetId) =>
+    (name || makeModel || serial || assetId)
+      ? {
+          name: name || null,
+          makeModel: makeModel || null,
+          serial: serial || null,
+          assetId: assetId || null
+        }
+      : null;
+
+  const groupBy = (rows, key) => {
+    const map = new Map();
+    (rows || []).forEach(row => {
+      const k = row[key];
+      if (k === null || k === undefined) {
+        return;
+      }
+      if (!map.has(k)) {
+        map.set(k, []);
+      }
+      map.get(k).push(row);
+    });
+    return map;
+  };
+
+  const followUpDetail = f => ({
+    id: f.id,
+    title: f.title || "Follow-Up",
+    category: f.category || null,
+    kind: f.follow_up_kind === "watch" ? "watch" : "action",
+    status: f.status === "open" ? "open" : "resolved",
+    nextAction: f.next_action || null,
+    createdBy: f.created_by || null,
+    createdAt: f.created_at || null,
+    resolvedAt: f.resolved_at || null,
+    resolvedBy: f.resolved_by || null,
+    resolution: f.resolution || null,
+    requestId: f.request_id ?? null,
+    origin: originFor(f.show_id),
+    equipment: equipmentFor(
+      f.equipment_name,
+      f.equipment_make_model,
+      f.equipment_serial,
+      f.equipment_asset_id
+    )
+  });
+
+  // Only OPEN follow-ups carry action labels; a resolved one is done.
+  const followUpLabels = f => {
+    const labels = [];
+    if (f.status === "open") {
+      const byCategory = closeoutLabelForCategory(f.category);
+      if (byCategory) {
+        labels.push(byCategory);
+      }
+      if (f.follow_up_kind === "watch") {
+        labels.push("monitor");
+      }
+    }
+    return labels;
+  };
+
+  const primarySectionFor = (labels, outstanding, originType) => {
+    if (labels.has("truck_damage")) {
+      return "truckDamage";
+    }
+    if (CLOSEOUT_EQUIPMENT_LABELS.some(l => labels.has(l))) {
+      return "equipment";
+    }
+    if (outstanding) {
+      if (originType === "carried") {
+        return "carried";
+      }
+      if (originType === "general") {
+        return "general";
+      }
+      return "unresolved";
+    }
+    return "completed";
+  };
+
+  const sortedLabels = labels =>
+    CLOSEOUT_LABEL_ORDER.filter(l => labels.has(l));
+
+
+  // One record per follow-up id, even if it was fetched by several queries.
+
+  const followUpsById = new Map();
+
+  []
+    .concat(
+      src.thisShowFollowUps || [],
+      src.openFollowUps || [],
+      src.resolvedFollowUps || []
+    )
+    .forEach(f => followUpsById.set(f.id, f));
+
+  const followUpsByRequest = new Map();
+  const standaloneFollowUps = [];
+
+  followUpsById.forEach(f => {
+    if (
+      f.request_id !== null &&
+      f.request_id !== undefined &&
+      requestIdSet.has(f.request_id)
+    ) {
+      if (!followUpsByRequest.has(f.request_id)) {
+        followUpsByRequest.set(f.request_id, []);
+      }
+      followUpsByRequest.get(f.request_id).push(f);
+    } else {
+      standaloneFollowUps.push(f);
+    }
+  });
+
+  const notesByRequest = groupBy(src.requestNotes, "request_id");
+  const logByRequest = groupBy(src.logEntries, "request_id");
+  const officialByRequest =
+    groupBy(src.officialItems, "source_request_id");
+
+
+  // ---- Request issues -------------------------------------------------
+
+  const requestIssues = src.requests.map(r => {
+
+    const attached = followUpsByRequest.get(r.id) || [];
+
+    const attachedOpen =
+      attached.filter(f => f.status === "open");
+
+    const official = officialByRequest.get(r.id) || [];
+
+    const labels = new Set();
+
+    if (r.end_of_show_report) {
+      const l = closeoutLabelForCategory(r.end_of_show_category);
+      if (l) {
+        labels.add(l);
+      }
+    }
+
+    attachedOpen.forEach(f =>
+      followUpLabels(f).forEach(l => labels.add(l))
+    );
+
+    official.forEach(item => {
+      const l = closeoutLabelForDisposition(item.disposition);
+      if (l) {
+        labels.add(l);
+      }
+    });
+
+    const outstanding =
+      r.status !== "complete" || attachedOpen.length > 0;
+
+    if (outstanding) {
+      labels.add("outstanding");
+    }
+
+    const primarySection =
+      primarySectionFor(labels, outstanding, "this_show");
+
+    return {
+      key: "req:" + r.id,
+      kind: "request",
+      title: r.description || "(no description)",
+      origin: originFor(showId),
+      state: outstanding ? "open" : "resolved",
+      labels: sortedLabels(labels),
+      primarySection,
+      sortAt:
+        primarySection === "completed"
+          ? (r.completed_at || r.created_at || null)
+          : (r.created_at || null),
+      request: {
+        id: r.id,
+        status: r.status || "new",
+        description: r.description || "",
+        department: r.department || null,
+        location: r.location || null,
+        requester: r.requester_name || null,
+        requestType: r.request_type || null,
+        claimedBy: r.claimed_by || null,
+        isPriority: !!r.is_priority,
+        createdAt: r.created_at || null,
+        completedAt: r.completed_at || null,
+        completedBy: r.completed_by || null,
+        resolutionNotes: r.resolution_notes || null,
+        gearLocation: r.gear_location || null,
+        equipment: equipmentFor(
+          r.equipment_name,
+          r.equipment_make_model,
+          r.equipment_serial,
+          r.equipment_asset_id
+        ),
+        endOfShow:
+          r.end_of_show_report
+            ? { category: r.end_of_show_category || null }
+            : null,
+        clientReport:
+          r.client_report
+            ? { category: r.client_report_category || null }
+            : null,
+        photoCount: (src.photoCounts || {})[r.id] || 0,
+        notes:
+          (notesByRequest.get(r.id) || []).map(n => ({
+            type: n.note_type || null,
+            text: n.notes || "",
+            by: n.created_by || null,
+            at: n.created_at || null
+          })),
+        logEntries:
+          (logByRequest.get(r.id) || []).map(e => ({
+            text: e.note || "",
+            by: e.engineer_name || null,
+            at: e.created_at || null
+          })),
+        officialItems:
+          official.map(item => ({
+            disposition: item.disposition || null,
+            dispositionLabel:
+              officialReportDispositionLabel(item.disposition),
+            subject: item.subject || "",
+            summary: item.summary || "",
+            by: item.created_by || null,
+            at: item.created_at || null
+          }))
+      },
+      followUps: attached.map(followUpDetail)
+    };
+  });
+
+
+  // ---- Follow-up issues (not attached to a Request of this show) ------
+
+  const followUpIssues = standaloneFollowUps.map(f => {
+
+    const origin = originFor(f.show_id);
+
+    const labels = new Set(followUpLabels(f));
+
+    const outstanding = f.status === "open";
+
+    if (outstanding) {
+      labels.add("outstanding");
+    }
+
+    const primarySection =
+      primarySectionFor(labels, outstanding, origin.type);
+
+    return {
+      key: "fu:" + f.id,
+      kind: "followup",
+      title: f.title || "Follow-Up",
+      origin,
+      state: outstanding ? "open" : "resolved",
+      labels: sortedLabels(labels),
+      primarySection,
+      sortAt:
+        primarySection === "completed"
+          ? (f.resolved_at || f.created_at || null)
+          : (f.created_at || null),
+      request: null,
+      followUps: [followUpDetail(f)]
+    };
+  });
+
+  const time = iso => (iso ? Date.parse(iso) || 0 : 0);
+
+  const issues =
+    requestIssues
+      .concat(followUpIssues)
+      .sort((a, b) => time(a.sortAt) - time(b.sortAt));
+
+
+  // ---- Notes that are not attached to a request card ------------------
+
+  const engineeringNotes =
+    (src.logEntries || [])
+      .filter(e =>
+        e.request_id === null ||
+        e.request_id === undefined ||
+        !requestIdSet.has(e.request_id)
+      )
+      .map(e => ({
+        text: e.note || "",
+        by: e.engineer_name || null,
+        at: e.created_at || null,
+        requestId: e.request_id ?? null
+      }));
+
+  const officialManualItems =
+    (src.officialItems || [])
+      .filter(item =>
+        item.source_request_id === null ||
+        item.source_request_id === undefined ||
+        !requestIdSet.has(item.source_request_id)
+      )
+      .map(item => ({
+        disposition: item.disposition || null,
+        dispositionLabel:
+          officialReportDispositionLabel(item.disposition),
+        subject: item.subject || "",
+        summary: item.summary || "",
+        by: item.created_by || null,
+        at: item.created_at || null
+      }));
+
+
+  // ---- Counts (kept separate on purpose) ------------------------------
+
+  const bySection = {
+    truckDamage: 0,
+    equipment: 0,
+    unresolved: 0,
+    carried: 0,
+    general: 0,
+    completed: 0
+  };
+
+  const byLabel = {};
+  CLOSEOUT_LABEL_ORDER.forEach(l => { byLabel[l] = 0; });
+
+  const outstandingByOrigin = { thisShow: 0, carried: 0, general: 0 };
+
+  issues.forEach(issue => {
+
+    bySection[issue.primarySection] += 1;
+
+    issue.labels.forEach(l => { byLabel[l] += 1; });
+
+    if (issue.labels.includes("outstanding")) {
+      if (issue.origin.type === "carried") {
+        outstandingByOrigin.carried += 1;
+      } else if (issue.origin.type === "general") {
+        outstandingByOrigin.general += 1;
+      } else {
+        outstandingByOrigin.thisShow += 1;
+      }
+    }
+  });
+
+  const counts = {
+    distinctIssues: issues.length,
+    outstandingIssues:
+      outstandingByOrigin.thisShow +
+      outstandingByOrigin.carried +
+      outstandingByOrigin.general,
+    newRequestsThisShow: src.requests.length,
+    requestsCompleted:
+      src.requests.filter(r => r.status === "complete").length,
+    requestsOpen:
+      src.requests.filter(r => r.status !== "complete").length,
+    resolvedFromEarlierShows:
+      followUpIssues.filter(i =>
+        i.state === "resolved" &&
+        i.origin.type !== "this_show"
+      ).length,
+    endOfShowItems:
+      src.requests.filter(r => r.end_of_show_report).length,
+    clientItems:
+      src.requests.filter(r => r.client_report).length,
+    bySection,
+    byLabel,
+    outstandingByOrigin
+  };
+
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    show: {
+      id: show.id,
+      name: show.show_name || "",
+      number: show.show_number || null,
+      venue: show.venue || null,
+      mainUnit: show.main_unit || null,
+      clientNetwork: show.client_network || null,
+      startDate: show.start_date || null,
+      startedBy: show.started_by || null
+    },
+    crew: src.crew || [],
+    counts,
+    issues,
+    engineeringNotes,
+    officialManualItems,
+    cablesOut: src.cablesOut || [],
+    closeoutNotes: closeoutNotes || "",
+    warnings: src.warnings || []
+  };
+}
+
+
+function renderCloseoutReportHtml(data) {
+
+  const fmtDate = iso =>
+    iso ? new Date(iso).toLocaleString() : "—";
+
+  const chip = (text, tone) => `
+    <span style="
+      display:inline-block;
+      font-size:12px;
+      font-weight:900;
+      letter-spacing:.03em;
+      text-transform:uppercase;
+      padding:3px 9px;
+      border-radius:6px;
+      margin:0 6px 6px 0;
+      print-color-adjust:exact;
+      -webkit-print-color-adjust:exact;
+      ${CLOSEOUT_TONE_STYLE[tone]}
+    ">${escapeHtml(text)}</span>
+  `;
+
+  const field = (label, value) =>
+    value
+      ? `<div><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`
+      : "";
+
+  const equipmentText = eq =>
+    eq
+      ? [
+          eq.name,
+          eq.makeModel,
+          eq.serial ? "S/N " + eq.serial : null,
+          eq.assetId ? "Asset " + eq.assetId : null
+        ].filter(Boolean).join(" · ")
+      : "";
+
+  const chipsFor = issue => {
+
+    let html = "";
+
+    if (issue.origin.type === "carried") {
+      html += chip("From " + issue.origin.label, "amber");
+    } else if (issue.origin.type === "general") {
+      html += chip("General / No Show", "slate");
+    } else {
+      html += chip("This show", "slate");
+    }
+
+    html += issue.labels.map(l =>
+      chip(CLOSEOUT_LABEL_TEXT[l], CLOSEOUT_LABEL_TONE[l])
+    ).join("");
+
+    if (issue.state === "resolved") {
+      html += chip("Completed", "slate");
+    }
+
+    return html;
+  };
+
+  const followUpBlock = f => `
+    <div class="report-note">
+      <strong>
+        Follow-Up (${f.status === "open" ? "open" : "resolved"}${
+          f.kind === "watch" ? ", watch / verify" : ""
+        }):
+      </strong>
+      ${escapeHtml(f.title)}
+      ${field("Category", f.category)}
+      ${field("Next action", f.nextAction)}
+      ${field("Equipment", equipmentText(f.equipment))}
+      ${
+        f.status === "resolved"
+          ? field(
+              "Resolved",
+              fmtDate(f.resolvedAt) +
+                (f.resolvedBy ? " by " + f.resolvedBy : "") +
+                (f.resolution ? " — " + f.resolution : "")
+            )
+          : ""
+      }
+    </div>
+  `;
+
+  const requestStatusText = r => {
+    if (r.status === "complete") {
+      return "Completed";
+    }
+    if (r.status === "in-progress") {
+      return "In progress" +
+        (r.claimedBy ? " — " + r.claimedBy : "");
+    }
+    return "New / unclaimed";
+  };
+
+  const requestCard = issue => {
+
+    const r = issue.request;
+
+    return `
+      <div class="report-item">
+
+        <div>${chipsFor(issue)}</div>
+
+        <div class="report-item-head">
+          <strong>
+            Request #${escapeHtml(String(r.id))}${
+              r.isPriority ? " — PRIORITY" : ""
+            }
+          </strong>
+          — ${escapeHtml(r.description)}
+        </div>
+
+        <div class="report-item-grid">
+          ${field("Status", requestStatusText(r))}
+          ${field("Department", r.department)}
+          ${field("Location", r.location)}
+          ${field("Reported by", r.requester)}
+          ${field("Request type", r.requestType)}
+          ${field("Reported", fmtDate(r.createdAt))}
+          ${
+            r.status === "complete"
+              ? field(
+                  "Completed",
+                  fmtDate(r.completedAt) +
+                    (r.completedBy ? " by " + r.completedBy : "")
+                )
+              : ""
+          }
+          ${field("Equipment", equipmentText(r.equipment))}
+          ${field("Gear location", r.gearLocation)}
+          ${
+            r.endOfShow
+              ? field(
+                  "End-of-show report",
+                  r.endOfShow.category || "Yes"
+                )
+              : ""
+          }
+          ${
+            r.clientReport
+              ? field(
+                  "Client report",
+                  r.clientReport.category || "Yes"
+                )
+              : ""
+          }
+          ${
+            r.photoCount
+              ? field("Documentation photos", String(r.photoCount))
+              : ""
+          }
+        </div>
+
+        ${
+          r.resolutionNotes
+            ? `<div class="report-note">
+                <strong>Resolution:</strong>
+                ${escapeHtml(r.resolutionNotes)}
+              </div>`
+            : ""
+        }
+
+        ${issue.followUps.map(followUpBlock).join("")}
+
+        ${
+          r.officialItems.map(item => `
+            <div class="report-note">
+              <strong>Official report — ${escapeHtml(item.dispositionLabel)}:</strong>
+              ${escapeHtml(item.subject)}
+              ${item.summary ? " — " + escapeHtml(item.summary) : ""}
+            </div>
+          `).join("")
+        }
+
+        ${
+          r.notes.map(n => `
+            <div class="report-note">
+              <strong>Note${n.type ? " (" + escapeHtml(n.type) + ")" : ""}:</strong>
+              ${escapeHtml(n.text)}
+              <div style="color:#64748b;font-size:12px;margin-top:3px;">
+                ${escapeHtml(n.by || "—")} · ${escapeHtml(fmtDate(n.at))}
+              </div>
+            </div>
+          `).join("")
+        }
+
+        ${
+          r.logEntries.map(e => `
+            <div class="report-note">
+              <strong>Engineering log:</strong>
+              ${escapeHtml(e.text)}
+              <div style="color:#64748b;font-size:12px;margin-top:3px;">
+                ${escapeHtml(e.by || "—")} · ${escapeHtml(fmtDate(e.at))}
+              </div>
+            </div>
+          `).join("")
+        }
+
+      </div>
+    `;
+  };
+
+  const followUpCard = issue => {
+
+    const f = issue.followUps[0];
+
+    return `
+      <div class="report-item">
+
+        <div>${chipsFor(issue)}</div>
+
+        <div class="report-item-head">
+          <strong>${escapeHtml(f.title)}</strong>
+        </div>
+
+        <div class="report-item-grid">
+          ${field("Category", f.category)}
+          ${field("Original show", f.origin.label)}
+          ${field("Opened", fmtDate(f.createdAt))}
+          ${field("Opened by", f.createdBy)}
+          ${field(
+            "Type",
+            f.kind === "watch" ? "Watch / verify" : "Action / repair"
+          )}
+          ${field("Equipment", equipmentText(f.equipment))}
+          ${
+            f.requestId
+              ? field(
+                  "Linked request",
+                  "Request #" + f.requestId + " (another show)"
+                )
+              : ""
+          }
+        </div>
+
+        ${field("Next action", f.nextAction)}
+
+        ${
+          f.status === "resolved"
+            ? `<div class="report-note">
+                <strong>Resolved:</strong>
+                ${escapeHtml(fmtDate(f.resolvedAt))}${
+                  f.resolvedBy ? " by " + escapeHtml(f.resolvedBy) : ""
+                }
+                ${f.resolution ? " — " + escapeHtml(f.resolution) : ""}
+              </div>`
+            : ""
+        }
+
+      </div>
+    `;
+  };
+
+  const issueCard = issue =>
+    issue.kind === "request"
+      ? requestCard(issue)
+      : followUpCard(issue);
+
+  const c = data.counts;
+
+  const sectionDefs = [
+    {
+      key: "truckDamage",
+      title: "TRUCK DAMAGE",
+      empty: null
+    },
+    {
+      key: "equipment",
+      title: "EQUIPMENT NEEDING REPAIR / REPLACEMENT",
+      empty: "No items are currently marked as needing repair, replacement, or reported lost / missing."
+    },
+    {
+      key: "unresolved",
+      title: "UNRESOLVED — THIS SHOW",
+      empty: "No unresolved issues from this show."
+    },
+    {
+      key: "carried",
+      title: "OUTSTANDING FROM PREVIOUS SHOWS",
+      empty: "No other follow-ups from previous shows are outstanding.",
+      note: "Equipment and truck-damage items from previous shows are listed in their own sections above, tagged with their original show."
+    },
+    {
+      key: "general",
+      title: "GENERAL / NO-SHOW FOLLOW-UPS",
+      empty: "No general / no-show follow-ups are outstanding."
+    },
+    {
+      key: "completed",
+      title: "WORK COMPLETED THIS SHOW",
+      empty: "No work has been completed during this show yet."
+    }
+  ];
+
+  const sectionHtml = def => {
+
+    const items =
+      data.issues.filter(i => i.primarySection === def.key);
+
+    let body;
+
+    if (items.length) {
+      body = items.map(issueCard).join("");
+    } else if (def.key === "truckDamage") {
+      // Wording to revisit when Truck Damage classification is added
+      // (Step 2C): until then, zero here is NOT confirmation of no damage.
+      body = `
+        <div class="report-note" style="
+          border:2px solid #d97706;
+          background:#fef3c7;
+          color:#92400e;
+          font-weight:700;
+        ">
+          NEEDS REVIEW — no items are marked as truck damage.
+          Truck Help does not yet have a Truck Damage classification, so
+          this does NOT confirm that the truck was undamaged. Review the
+          ${c.bySection.equipment} equipment item(s) and the other
+          sections of this report, and record any truck damage in the
+          Closeout Notes.
+        </div>
+      `;
+    } else {
+      body = `<div class="report-none">${escapeHtml(def.empty)}</div>`;
+    }
+
+    return `
+      <div class="report-category">
+        <h3>${escapeHtml(def.title)} (${items.length})</h3>
+        ${def.note ? `<div style="color:#64748b;font-size:13px;margin-bottom:10px;">${escapeHtml(def.note)}</div>` : ""}
+        ${body}
+      </div>
+    `;
+  };
+
+  const sectionCountText =
+    sectionDefs.map(def =>
+      `${escapeHtml(def.title.split(" — ")[0].split(" / ")[0])}: ${c.bySection[def.key]}`
+    ).join(" · ");
+
+  const labelCountText =
+    CLOSEOUT_LABEL_ORDER
+      .filter(l => l !== "outstanding")
+      .map(l => `${escapeHtml(CLOSEOUT_LABEL_TEXT[l])}: ${c.byLabel[l]}`)
+      .join(" · ");
+
+  const s = data.show;
+
+  return `
+    <div class="report-sheet">
+
+      <div class="report-title">
+        TRUCK HELP — SHOW CLOSEOUT REPORT
+      </div>
+
+      <div class="report-show">
+        ${escapeHtml(s.name)}${
+          s.number ? " · " + escapeHtml(s.number) : ""
+        }
+      </div>
+
+      <div style="
+        margin-top:10px;
+        padding:10px 12px;
+        border:2px solid #d97706;
+        border-radius:8px;
+        background:#fef3c7;
+        color:#92400e;
+        font-weight:800;
+        print-color-adjust:exact;
+        -webkit-print-color-adjust:exact;
+      ">
+        PREVIEW — this show is still open and nothing has been closed or saved.
+        Generated ${escapeHtml(fmtDate(data.generatedAt))}.
+      </div>
+
+      <div class="report-meta">
+        ${field("Venue", s.venue)}
+        ${field("MU / Main Unit", s.mainUnit)}
+        ${field("Client / Network", s.clientNetwork)}
+        ${field("Start Date", s.startDate)}
+        ${field("Started By", s.startedBy)}
+        ${
+          data.crew.length
+            ? `<div><strong>Engineering Crew:</strong>
+                ${data.crew.map(e =>
+                  escapeHtml(e.name) +
+                  (e.role ? " — " + escapeHtml(e.role) : "")
+                ).join("; ")}
+              </div>`
+            : ""
+        }
+      </div>
+
+      ${
+        data.warnings.length
+          ? `<div class="report-note" style="margin-top:12px;border:2px solid #d97706;">
+              <strong>Some data could not be loaded:</strong>
+              ${data.warnings.map(w => escapeHtml(w)).join(" ")}
+            </div>`
+          : ""
+      }
+
+      <div class="report-totals">
+
+        <div class="report-total-box">
+          <div class="report-total-number">${c.distinctIssues}</div>
+          <div class="report-total-label">Distinct Issues</div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">${c.newRequestsThisShow}</div>
+          <div class="report-total-label">
+            New Requests This Show
+            (${c.requestsCompleted} done, ${c.requestsOpen} open)
+          </div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">${c.outstandingIssues}</div>
+          <div class="report-total-label">Outstanding Issues</div>
+        </div>
+
+        <div class="report-total-box">
+          <div class="report-total-number">${c.resolvedFromEarlierShows}</div>
+          <div class="report-total-label">Older Follow-Ups Resolved Now</div>
+        </div>
+
+      </div>
+
+      <div class="report-note" style="font-size:13px;line-height:1.6;">
+        <div>
+          <strong>Where issues are listed</strong>
+          (each issue appears once):
+          ${sectionCountText}
+        </div>
+        <div style="margin-top:6px;">
+          <strong>Outstanding by origin:</strong>
+          this show ${c.outstandingByOrigin.thisShow} ·
+          carried forward ${c.outstandingByOrigin.carried} ·
+          general / no show ${c.outstandingByOrigin.general}
+        </div>
+        <div style="margin-top:6px;">
+          <strong>Action labels</strong>
+          (an issue can carry several, so these do not add up to the
+          issue total):
+          ${labelCountText}
+        </div>
+        <div style="margin-top:6px;">
+          <strong>Report flags:</strong>
+          end-of-show items ${c.endOfShowItems} ·
+          client damage / missing ${c.clientItems}
+        </div>
+      </div>
+
+      ${sectionDefs.map(sectionHtml).join("")}
+
+      <div class="report-category">
+        <h3>ENGINEERING NOTES (${data.engineeringNotes.length})</h3>
+        ${
+          data.engineeringNotes.length
+            ? data.engineeringNotes.map(n => `
+                <div class="report-note">
+                  ${escapeHtml(n.text)}
+                  <div style="color:#64748b;font-size:12px;margin-top:3px;">
+                    ${escapeHtml(n.by || "—")} ·
+                    ${escapeHtml(fmtDate(n.at))}${
+                      n.requestId
+                        ? " · Request #" + escapeHtml(String(n.requestId))
+                        : ""
+                    }
+                  </div>
+                </div>
+              `).join("")
+            : `<div class="report-none">No general engineering notes were logged for this show.</div>`
+        }
+      </div>
+
+      ${
+        data.officialManualItems.length
+          ? `<div class="report-category">
+              <h3>OFFICIAL REPORT ITEMS ADDED MANUALLY (${data.officialManualItems.length})</h3>
+              ${data.officialManualItems.map(item => `
+                <div class="report-note">
+                  <strong>${escapeHtml(item.dispositionLabel)}:</strong>
+                  ${escapeHtml(item.subject)}
+                  ${item.summary ? " — " + escapeHtml(item.summary) : ""}
+                  <div style="color:#64748b;font-size:12px;margin-top:3px;">
+                    ${escapeHtml(item.by || "—")} ·
+                    ${escapeHtml(fmtDate(item.at))}
+                  </div>
+                </div>
+              `).join("")}
+            </div>`
+          : ""
+      }
+
+      ${
+        data.cablesOut.length
+          ? `<div class="report-category">
+              <h3>CABLES STILL OUT (${data.cablesOut.length})</h3>
+              ${data.cablesOut.map(cable => `
+                <div class="report-note">
+                  <strong>${escapeHtml(cable.type)}</strong>
+                  ${cable.length ? " — " + escapeHtml(cable.length) : ""}
+                  · Taken ${escapeHtml(fmtDate(cable.takenAt))}
+                </div>
+              `).join("")}
+            </div>`
+          : ""
+      }
+
+      <div class="report-category">
+        <h3>CLOSEOUT NOTES</h3>
+        ${
+          data.closeoutNotes
+            ? `<div class="report-note" style="white-space:pre-wrap;">${escapeHtml(data.closeoutNotes)}</div>`
+            : `<div class="report-none">No closeout notes entered yet.</div>`
+        }
+      </div>
+
+    </div>
+  `;
+}
+
+
+// Closeout Notes typed on the closeout screen, kept so a round trip
+// through the preview does not lose them.
+let closeoutNotesDraft = "";
+
+let closeoutPreviewInProgress = false;
+
+async function previewCloseoutReport() {
+  if (closeoutPreviewInProgress) {
+    return;
+  }
+  closeoutPreviewInProgress = true;
+  try {
+    await previewCloseoutReportImpl();
+  } finally {
+    closeoutPreviewInProgress = false;
+  }
+}
+
+async function previewCloseoutReportImpl() {
+
+  if (!currentShow) {
+    alert("There is no active show.");
+    return;
+  }
+
+  const notesField = document.getElementById("closeoutNotes");
+
+  if (notesField) {
+    closeoutNotesDraft = notesField.value;
+  }
+
+  const show = currentShow;
+
+  showsView.innerHTML = `
+    <div class="panel">
+      <div class="empty">
+        Building closeout report preview...
+      </div>
+    </div>
+  `;
+
+  let reportHtml;
+
+  try {
+    const sources = await fetchCloseoutReportSources(show);
+
+    const data =
+      buildCloseoutReportData(
+        show,
+        sources,
+        closeoutNotesDraft.trim()
+      );
+
+    reportHtml = renderCloseoutReportHtml(data);
+
+  } catch (e) {
+
+    console.error(e);
+
+    showsView.innerHTML = `
+      <div class="panel">
+        <div class="error">
+          Could not build the closeout report preview:
+          ${escapeHtml(e.message || String(e))}
+        </div>
+        <div style="margin-top:14px;">
+          <button class="secondary"
+            onclick="showShowCloseout()">
+            BACK TO CLOSEOUT
+          </button>
+        </div>
+      </div>
+    `;
+
+    return;
+  }
+
+  showsView.innerHTML = `
+    <div class="panel">
+
+      <div class="no-print"
+        style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+
+        <button class="secondary"
+          onclick="showShowCloseout()">
+          BACK TO CLOSEOUT
+        </button>
+
+        <button class="primary"
+          onclick="window.print()">
+          PRINT REPORT
+        </button>
+
+      </div>
+
+      ${reportHtml}
+
+    </div>
+  `;
+
+  window.scrollTo(0, 0);
 }
 
 
