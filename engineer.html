@@ -1062,6 +1062,36 @@ sb.auth.onAuthStateChange((event, session) => {
   }
 });
 
+// Remembers only the last SUCCESSFUL login identifier (email) on this
+// device, to pre-fill the login field. Never the password, and never used
+// to sign anyone in: authentication still requires the password.
+const REMEMBERED_LOGIN_KEY = "truckHelpLastLoginEmail";
+
+function rememberLoginEmail(email) {
+  try {
+    localStorage.setItem(REMEMBERED_LOGIN_KEY, email);
+  } catch (e) {
+    // Storage unavailable (e.g. private browsing): login still works,
+    // the name just isn't remembered.
+  }
+}
+
+function prefillRememberedLogin() {
+  let remembered = "";
+
+  try {
+    remembered = localStorage.getItem(REMEMBERED_LOGIN_KEY) || "";
+  } catch (e) {
+    remembered = "";
+  }
+
+  const field = document.getElementById("email");
+
+  if (field && remembered) {
+    field.value = remembered;
+  }
+}
+
 async function login() {
   document.getElementById("loginError").textContent = "";
 
@@ -1082,6 +1112,12 @@ async function login() {
       error.message;
     return;
   }
+
+  rememberLoginEmail(email);
+
+  // Don't leave the password sitting in the field for the next person
+  // to press LOGIN with after a logout.
+  document.getElementById("password").value = "";
 
   await initializeApp();
 }
@@ -1122,6 +1158,8 @@ async function logout() {
   realtimeStarted = false;
 
   selectedEngineer = null;
+
+  prefillRememberedLogin();
 
   loginView.classList.remove("hidden");
   appView.classList.add("hidden");
@@ -14654,6 +14692,8 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+prefillRememberedLogin();
 
 checkSession();
 </script>
