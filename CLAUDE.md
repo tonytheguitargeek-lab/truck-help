@@ -419,6 +419,32 @@ The following have been discussed but are NOT automatically approved for impleme
 Tony decides when an idea becomes an active feature.
 
 
+## Next Feature: AI Report Writer (FUTURE — NOT IMPLEMENTED)
+
+This is the planned next feature. It is a FUTURE feature: do not implement it, or any part of it, until Tony says to start.
+
+Purpose:
+
+Help engineers turn rough technical notes into clear, concise, professional reports for company management.
+
+Requirements:
+
+- Generate Request / Resolution wording per issue.
+- Generate Slack updates and management emails.
+- Generate complete engineering show summaries.
+- Allow the EIC to edit all generated text.
+- Provide copy-to-clipboard functionality.
+- Never invent repairs, actions, or resolutions. Generated wording may only restate what is actually recorded in Truck Help.
+- Never automatically publish or send anything. The EIC reviews, edits, copies, and sends text manually.
+- Keep AI credentials secure on the backend. No AI API key may appear in browser code, in the repository, or in any file served to a browser.
+- Provide a non-AI formatting fallback, so reports can still be produced if the AI service is unavailable or not configured.
+
+Notes for when this is started:
+
+- The closeout report preview already builds deduplicated report data and plain-text Request / Resolution wording from recorded fields only. That is the natural foundation, and its plain-text output is a natural non-AI fallback.
+- Any backend component (for example a Supabase Edge Function) falls under the Backend rules above: ask Tony or inspect the Supabase configuration first, and do not weaken security to make it work.
+
+
 ## Immediate Project State
 
 Truck Help V1 is considered functional.
