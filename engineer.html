@@ -7566,11 +7566,22 @@ async function openFollowUpDetail(id, backContext) {
           followUp.request_id
             ? `
               <div>
-                <strong>Originating Request:</strong>
+                <strong>${
+                  followUp.request_linked_manually === true
+                    ? "Linked Request"
+                    : "Originating Request"
+                }:</strong>
                 <a href="javascript:void(0)"
                   onclick="openRequestDetail(${followUp.request_id})">
                   Request #${followUp.request_id}
                 </a>
+                ${
+                  followUp.request_linked_manually === true
+                    ? ""
+                    : `<span style="color:#64748b;font-size:13px;">
+                        · linked automatically
+                      </span>`
+                }
               </div>
             `
             : ""
@@ -7585,6 +7596,8 @@ async function openFollowUpDetail(id, backContext) {
               : ""
           }
         </div>
+
+        ${followUpLinkControlsHtml(followUp)}
 
       </div>
 
@@ -8051,6 +8064,506 @@ async function changeFollowUpKindToActionImpl(id) {
     return;
   }
 
+  await openFollowUpDetail(id);
+}
+
+
+// ---------------------------------------------------------------------
+// Link / unlink an existing Follow-Up to an existing Request (Step 2C)
+//
+// Uses only the two database functions that do the work atomically and
+// write the audit note (the name recorded is the signed-in account's
+// Engineers record, never anything sent from here):
+//   link_follow_up_to_request(p_follow_up_id, p_request_id)
+//   unlink_follow_up_from_request(p_follow_up_id)
+// Only requests from the follow-up's own show are offered. Links created
+// automatically at request completion cannot be removed here.
+// ---------------------------------------------------------------------
+
+let linkFollowUpState = null;
+let linkFollowUpInProgress = false;
+let unlinkFollowUpInProgress = false;
+
+
+function followUpLinkControlsHtml(followUp) {
+
+  // Already linked: only a link made by hand can be removed. Anything
+  // else (automatic link, or flag not reported) shows no UNLINK.
+  if (followUp.request_id) {
+
+    if (followUp.request_linked_manually !== true) {
+      return "";
+    }
+
+    return `
+      <div class="no-print" style="margin-top:12px;">
+        <button class="secondary"
+          onclick="unlinkFollowUpFromRequest(${Number(followUp.id)}, ${Number(followUp.request_id)})">
+          UNLINK FROM REQUEST
+        </button>
+      </div>
+    `;
+  }
+
+  if (followUp.show_id === null || followUp.show_id === undefined) {
+    return `
+      <div class="no-print"
+        style="margin-top:12px;color:#64748b;font-size:13px;">
+        A follow-up with no show cannot be linked to a request.
+      </div>
+    `;
+  }
+
+  return `
+    <div class="no-print" style="margin-top:12px;">
+      <button class="primary"
+        onclick="openLinkFollowUpToRequest(${Number(followUp.id)})">
+        LINK TO REQUEST
+      </button>
+    </div>
+  `;
+}
+
+
+async function openLinkFollowUpToRequest(id) {
+
+  if (linkFollowUpInProgress) {
+    return;
+  }
+
+  modal.innerHTML = `
+    <h2>Link to Request</h2>
+    <div class="muted" style="margin-top:8px;">Loading...</div>
+  `;
+  openModal();
+
+  // Re-read the follow-up so a stale screen cannot offer a link that no
+  // longer applies.
+  const { data: followUp, error } =
+    await sb
+      .from("Follow_Ups")
+      .select("id, title, show_id, request_id")
+      .eq("id", id)
+      .single();
+
+  if (error) {
+    closeModal();
+    alert(error.message);
+    return;
+  }
+
+  if (followUp.request_id) {
+    closeModal();
+    alert(
+      "This follow-up is already linked to Request #" +
+      followUp.request_id + "."
+    );
+    await openFollowUpDetail(id);
+    return;
+  }
+
+  if (followUp.show_id === null || followUp.show_id === undefined) {
+    closeModal();
+    alert("A follow-up with no show cannot be linked to a request.");
+    return;
+  }
+
+  const [requestsResult, showResult] = await Promise.all([
+    sb
+      .from("Requests")
+      .select("id, requester_name, department, location, description, status, created_at")
+      .eq("show_id", followUp.show_id)
+      .order("id", { ascending: false }),
+    sb
+      .from("Shows")
+      .select("show_name, venue")
+      .eq("id", followUp.show_id)
+      .single()
+  ]);
+
+  if (requestsResult.error) {
+    closeModal();
+    alert(requestsResult.error.message);
+    return;
+  }
+
+  const show = showResult.error ? null : showResult.data;
+
+  linkFollowUpState = {
+    followUp,
+    showLabel: show
+      ? show.show_name + (show.venue ? " — " + show.venue : "")
+      : "Show #" + followUp.show_id,
+    requests: requestsResult.data || [],
+    query: "",
+    selectedRequestId: null
+  };
+
+  renderLinkFollowUpPicker();
+}
+
+
+function renderLinkFollowUpPicker() {
+
+  const st = linkFollowUpState;
+
+  if (!st || linkFollowUpInProgress) {
+    return;
+  }
+
+  st.selectedRequestId = null;
+
+  modal.innerHTML = `
+    <h2>Link to Request</h2>
+
+    <div style="margin-top:8px;">
+      <strong>${escapeHtml(st.followUp.title || "Follow-Up")}</strong>
+    </div>
+
+    <div class="muted" style="margin-top:4px;">
+      Requests from ${escapeHtml(st.showLabel)}
+    </div>
+
+    <input
+      id="linkRequestSearch"
+      type="search"
+      placeholder="Search # / name / dept / location"
+      value="${escapeHtml(st.query)}"
+      oninput="filterLinkRequestChoices(this.value)"
+      style="margin-top:12px;">
+
+    <div id="linkRequestList"
+      style="margin-top:12px;max-height:50vh;overflow-y:auto;">
+    </div>
+
+    <button
+      class="secondary full"
+      style="margin-top:12px;"
+      onclick="cancelLinkFollowUp()">
+      CANCEL
+    </button>
+  `;
+
+  renderLinkRequestList();
+}
+
+
+function filterLinkRequestChoices(query) {
+
+  if (!linkFollowUpState) {
+    return;
+  }
+
+  linkFollowUpState.query = query || "";
+  renderLinkRequestList();
+}
+
+
+function renderLinkRequestList() {
+
+  const st = linkFollowUpState;
+  const listEl = document.getElementById("linkRequestList");
+
+  if (!st || !listEl) {
+    return;
+  }
+
+  const q = st.query.trim().toLowerCase();
+
+  const matches = st.requests.filter(r => {
+
+    if (!q) {
+      return true;
+    }
+
+    return [
+      "#" + r.id,
+      String(r.id),
+      r.requester_name,
+      r.department,
+      r.location,
+      r.description,
+      r.status
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(q);
+  });
+
+  if (!matches.length) {
+    listEl.innerHTML = `
+      <div class="empty-state">
+        ${
+          st.requests.length
+            ? "No requests match your search."
+            : "This show has no requests."
+        }
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = matches.map(r => {
+
+    const meta =
+      [r.requester_name, r.department, r.location]
+        .filter(Boolean)
+        .map(escapeHtml)
+        .join(" · ");
+
+    return `
+      <div class="request-card"
+        role="button"
+        tabindex="0"
+        style="margin-bottom:8px;cursor:pointer;min-height:56px;"
+        onclick="chooseLinkRequest(${Number(r.id)})"
+        onkeydown="linkRequestRowKey(event, ${Number(r.id)})">
+
+        <div style="
+          display:flex;
+          justify-content:space-between;
+          gap:12px;
+          align-items:flex-start;
+        ">
+          <strong>Request #${escapeHtml(String(r.id))}</strong>
+          <span class="badge">
+            ${escapeHtml((r.status || "").replaceAll("_", " ").toUpperCase())}
+          </span>
+        </div>
+
+        ${
+          meta
+            ? `<div class="muted" style="margin-top:4px;">${meta}</div>`
+            : ""
+        }
+
+        <div style="margin-top:6px;">
+          ${escapeHtml(r.description || "")}
+        </div>
+
+      </div>
+    `;
+  }).join("");
+}
+
+
+// Enter / Space on a focused request row behaves like a tap. A div row has
+// no native click on keypress, so this cannot double-fire with onclick.
+function linkRequestRowKey(event, requestId) {
+
+  if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") {
+    return;
+  }
+
+  // Stops Space from scrolling the list, and ignores held-down repeats.
+  event.preventDefault();
+
+  if (event.repeat) {
+    return;
+  }
+
+  chooseLinkRequest(requestId);
+}
+
+
+function chooseLinkRequest(requestId) {
+
+  const st = linkFollowUpState;
+
+  if (!st) {
+    return;
+  }
+
+  const request = st.requests.find(r => r.id === requestId);
+
+  if (!request) {
+    return;
+  }
+
+  st.selectedRequestId = request.id;
+
+  const meta =
+    [request.requester_name, request.department, request.location]
+      .filter(Boolean)
+      .map(escapeHtml)
+      .join(" · ");
+
+  modal.innerHTML = `
+    <h2>Confirm Link</h2>
+
+    <div class="panel" style="margin-top:8px;">
+      <div class="muted">Follow-Up</div>
+      <div><strong>${escapeHtml(st.followUp.title || "Follow-Up")}</strong></div>
+    </div>
+
+    <div class="panel" style="margin-top:8px;">
+      <div class="muted">Request</div>
+      <div><strong>Request #${escapeHtml(String(request.id))}</strong></div>
+      ${
+        meta
+          ? `<div class="muted" style="margin-top:4px;">${meta}</div>`
+          : ""
+      }
+      <div style="margin-top:6px;">
+        ${escapeHtml(request.description || "")}
+      </div>
+    </div>
+
+    <div class="muted" style="margin-top:12px;">
+      Neither record's status changes. The link is added to this
+      follow-up's History under your signed-in account's name.
+    </div>
+
+    <button
+      id="linkConfirmBtn"
+      class="primary full"
+      style="margin-top:16px;"
+      onclick="linkFollowUpToRequest()">
+      LINK
+    </button>
+
+    <button
+      id="linkBackBtn"
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="renderLinkFollowUpPicker()">
+      BACK
+    </button>
+
+    <button
+      id="linkCancelBtn"
+      class="secondary full"
+      style="margin-top:8px;"
+      onclick="cancelLinkFollowUp()">
+      CANCEL
+    </button>
+  `;
+}
+
+
+function cancelLinkFollowUp() {
+
+  // A link already sent to the database cannot be called back; keep the
+  // screen in place until it finishes and the true state is shown.
+  if (linkFollowUpInProgress) {
+    return;
+  }
+
+  linkFollowUpState = null;
+  closeModal();
+}
+
+
+async function linkFollowUpToRequest() {
+  if (linkFollowUpInProgress) {
+    return;
+  }
+  linkFollowUpInProgress = true;
+  try {
+    await linkFollowUpToRequestImpl();
+  } finally {
+    linkFollowUpInProgress = false;
+  }
+}
+
+async function linkFollowUpToRequestImpl() {
+
+  const st = linkFollowUpState;
+
+  if (!st || st.selectedRequestId === null) {
+    return;
+  }
+
+  const followUpId = st.followUp.id;
+  const requestId = st.selectedRequestId;
+
+  const btn = document.getElementById("linkConfirmBtn");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "LINKING...";
+  }
+
+  for (const otherId of ["linkBackBtn", "linkCancelBtn"]) {
+    const other = document.getElementById(otherId);
+    if (other) {
+      other.disabled = true;
+    }
+  }
+
+  let message = null;
+
+  try {
+    const { error } = await sb.rpc("link_follow_up_to_request", {
+      p_follow_up_id: followUpId,
+      p_request_id: requestId
+    });
+
+    if (error) {
+      message = error.message || "The follow-up could not be linked.";
+    }
+  } catch (err) {
+    message =
+      "Could not reach the server. The screen will show what was actually saved.";
+  }
+
+  linkFollowUpState = null;
+  closeModal();
+
+  if (message) {
+    alert(message);
+  }
+
+  // Always re-read from the database so the screen shows the true state.
+  await openFollowUpDetail(followUpId);
+}
+
+
+async function unlinkFollowUpFromRequest(id, requestId) {
+  if (unlinkFollowUpInProgress) {
+    return;
+  }
+  unlinkFollowUpInProgress = true;
+  try {
+    await unlinkFollowUpFromRequestImpl(id, requestId);
+  } finally {
+    unlinkFollowUpInProgress = false;
+  }
+}
+
+async function unlinkFollowUpFromRequestImpl(id, requestId) {
+
+  const confirmed = confirm(
+    "Unlink this follow-up from Request #" + requestId + "? " +
+    "Neither record's status changes. The change is added to this " +
+    "follow-up's History."
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  let message = null;
+
+  try {
+    const { error } = await sb.rpc("unlink_follow_up_from_request", {
+      p_follow_up_id: id
+    });
+
+    if (error) {
+      message = error.message || "The follow-up could not be unlinked.";
+    }
+  } catch (err) {
+    message =
+      "Could not reach the server. The screen will show what was actually saved.";
+  }
+
+  if (message) {
+    alert(message);
+  }
+
+  // Always re-read from the database so the screen shows the true state.
   await openFollowUpDetail(id);
 }
 
