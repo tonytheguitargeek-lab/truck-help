@@ -891,6 +891,34 @@ textarea {
   .print-only {
     display: block !important;
   }
+
+  /* Official Engineering Show Report only: cards can be long (updates,
+     notes), so let a card continue onto the next page instead of leaving
+     half a page blank; keep each small block whole; keep headings with
+     what follows; wrap long unbroken text. Other reports are unchanged. */
+  .official-report-sheet {
+    overflow-wrap: anywhere;
+  }
+
+  .official-report-sheet .report-item {
+    break-inside: auto;
+  }
+
+  .official-report-sheet .report-note,
+  .official-report-sheet .report-event,
+  .official-report-sheet .report-total-box {
+    break-inside: avoid;
+  }
+
+  .official-report-sheet .report-updates {
+    break-inside: auto;
+  }
+
+  .official-report-sheet .report-category > h3,
+  .official-report-sheet .report-item-head,
+  .official-report-sheet .report-item > div:first-child {
+    break-after: avoid;
+  }
 }
 
 @media (max-width: 650px) {
@@ -3354,7 +3382,7 @@ function showMoreTools() {
         <button class="menu-card"
           onclick="showReports()">
           <strong>Reports</strong>
-          <span>End-of-show turnover report</span>
+          <span>Official show report and turnover reports</span>
         </button>
 
         <button class="menu-card"
@@ -5842,6 +5870,11 @@ function returnFromRequestDetail() {
     return;
   }
 
+  if (ctx.type === "officialReport" && ctx.showId != null) {
+    showReports(ctx.showId, "official", reportsBackContext);
+    return;
+  }
+
   if (ctx.type === "engineeringRecord") {
     showEngineeringRecord();
     return;
@@ -7808,6 +7841,11 @@ function returnFromFollowUpDetail() {
 
   if (ctx.type === "closeout") {
     showShowCloseout();
+    return;
+  }
+
+  if (ctx.type === "officialReport" && ctx.showId != null) {
+    showReports(ctx.showId, "official", reportsBackContext);
     return;
   }
 
@@ -10229,7 +10267,14 @@ function printSupplyItemRowHtml(item) {
 }
 
 
-async function showReports(selectedShowId = null, selectedType = 'end', backContext = null) {
+// Where the Reports screen's BACK button (and returns from an opened
+// request / follow-up) should go.
+let reportsBackContext = null;
+
+async function showReports(selectedShowId = null, selectedType = 'official', backContext = null) {
+
+  reportsBackContext = backContext;
+
   hideViews();
   reportsView.classList.remove("hidden");
 
@@ -10261,7 +10306,7 @@ async function showReports(selectedShowId = null, selectedType = 'end', backCont
         <div>
           <h2 style="margin:0;">Reports</h2>
           <div style="color:#64748b;">
-            End-of-show turnover reports
+            Official show report and turnover reports
           </div>
         </div>
 
@@ -10296,8 +10341,15 @@ async function showReports(selectedShowId = null, selectedType = 'end', backCont
 
             <div class="report-type-tabs">
               <button
-                id="endReportTab"
+                id="officialReportTab"
                 class="report-type-tab active"
+                onclick="setReportType('official')">
+                OFFICIAL ENGINEERING SHOW REPORT
+              </button>
+
+              <button
+                id="endReportTab"
+                class="report-type-tab"
                 onclick="setReportType('end')">
                 END OF SHOW REPORT
               </button>
@@ -10309,13 +10361,7 @@ async function showReports(selectedShowId = null, selectedType = 'end', backCont
                 CLIENT DAMAGE / MISSING REPORT
               </button>
 
-              <button
-                id="officialReportTab"
-                class="report-type-tab"
-                onclick="setReportType('official')">
-                OFFICIAL ENGINEERING SHOW REPORT
-              </button>
-            </div>
+              </div>
           </div>
 
           <div id="reportContent"
@@ -10344,9 +10390,9 @@ async function showReports(selectedShowId = null, selectedType = 'end', backCont
     reportType =
       selectedType === "client"
         ? "client"
-        : selectedType === "official"
-          ? "official"
-          : "end";
+        : selectedType === "end"
+          ? "end"
+          : "official";
 
     const endTab =
       document.getElementById("endReportTab");
@@ -11001,10 +11047,30 @@ function clientReportItemHtml(r) {
 }
 
 
+// The Official Engineering Show Report is GENERATED from the same
+// deduplicated data as the closeout preview (requests, follow-ups and every
+// update logged against the show, supplies, notes). Items engineers added
+// by hand are kept, as "Additional Items". For a closed show, open /
+// completed state is rebuilt as of closeout from recorded dates; this is a
+// rebuilt view, not a saved copy.
+let officialReportBuildToken = 0;
+
 async function loadOfficialShowReport(showId) {
 
   const content =
     document.getElementById("reportContent");
+
+  if (!content) {
+    return;
+  }
+
+  const token = ++officialReportBuildToken;
+
+  content.innerHTML = `
+    <div class="empty">
+      Building the Official Engineering Show Report...
+    </div>
+  `;
 
   const { data: show, error: showError } = await sb
     .from("Shows")
@@ -11012,123 +11078,58 @@ async function loadOfficialShowReport(showId) {
     .eq("id", showId)
     .single();
 
+  if (token !== officialReportBuildToken) {
+    return;
+  }
+
   if (showError) {
     content.innerHTML =
       `<div class="error">${escapeHtml(showError.message)}</div>`;
     return;
   }
 
-  const { data: items, error: itemsError } = await sb
-    .from("Official_Show_Report_Items")
-    .select("*")
-    .eq("show_id", showId)
-    .order("created_at", { ascending: true });
+  try {
 
-  if (itemsError) {
+    const asOf =
+      !show.active && show.closed_at
+        ? show.closed_at
+        : null;
+
+    const sources =
+      await fetchCloseoutReportSources(show, { asOf });
+
+    if (token !== officialReportBuildToken) {
+      return;
+    }
+
+    const data =
+      buildCloseoutReportData(
+        show,
+        sources,
+        show.active ? "" : (show.closeout_notes || "")
+      );
+
+    // Lets each card's COPY REQUEST / RESOLUTION button use this data.
+    closeoutPreviewData = data;
+
     content.innerHTML =
-      `<div class="error">${escapeHtml(itemsError.message)}</div>`;
-    return;
+      renderCloseoutReportHtml(data, { mode: "official" });
+
+  } catch (e) {
+
+    if (token !== officialReportBuildToken) {
+      return;
+    }
+
+    console.error(e);
+
+    content.innerHTML = `
+      <div class="error">
+        Could not build the Official Engineering Show Report:
+        ${escapeHtml(e.message || String(e))}
+      </div>
+    `;
   }
-
-  const rows = items || [];
-
-  const actionRequired =
-    rows.filter(i =>
-      i.disposition === "repair_required" ||
-      i.disposition === "replacement_required" ||
-      i.disposition === "missing" ||
-      i.disposition === "show_extra_billable"
-    );
-
-  const forInformation =
-    rows.filter(i =>
-      i.disposition === "monitor_verify" ||
-      i.disposition === "fyi"
-    );
-
-  content.innerHTML = `
-    <div class="report-sheet">
-
-      <div class="report-title">
-        TRUCK HELP — OFFICIAL ENGINEERING SHOW REPORT
-      </div>
-
-      <div class="report-show">
-        ${escapeHtml(show.show_name || "")}
-      </div>
-
-      <div class="report-meta">
-        <div>
-          <strong>Venue:</strong>
-          ${escapeHtml(show.venue || "—")}
-        </div>
-
-        <div>
-          <strong>Start Date:</strong>
-          ${escapeHtml(show.start_date || "—")}
-        </div>
-
-        <div>
-          <strong>Status:</strong>
-          ${show.active ? "Active" : "Closed"}
-        </div>
-      </div>
-
-      <div class="no-print"
-        style="margin:18px 0; display:flex; gap:10px; flex-wrap:wrap;">
-
-        <button class="primary"
-          onclick="openAddToShowReport()">
-          + ADD REPORT ITEM
-        </button>
-
-        <button class="primary"
-          onclick="printOfficialShowReport()">
-          PRINT REPORT
-        </button>
-      </div>
-
-      ${
-        actionRequired.length
-        ? `
-          <div class="official-report-category action-required">
-            <h3>ACTION REQUIRED (${actionRequired.length})</h3>
-
-            ${actionRequired
-              .map(officialReportItemHtml)
-              .join("")}
-          </div>
-        `
-        : ""
-      }
-
-      ${
-        forInformation.length
-        ? `
-          <div class="official-report-category for-information">
-            <h3>FOR INFORMATION / MONITORING (${forInformation.length})</h3>
-
-            ${forInformation
-              .map(officialReportItemHtml)
-              .join("")}
-          </div>
-        `
-        : ""
-      }
-
-      ${
-        !rows.length
-        ? `
-          <div class="report-none">
-            No items have been published to this show's
-            Official Engineering Show Report.
-          </div>
-        `
-        : ""
-      }
-
-    </div>
-  `;
 }
 
 
@@ -13329,7 +13330,15 @@ function closeoutLabelForDisposition(disposition) {
 }
 
 
-async function fetchCloseoutReportSources(show) {
+// options.asOf (ISO time, optional): used by the Official report for a
+// CLOSED show. Follow-ups from other shows are then limited to those that
+// existed at that time and were still unresolved then (open now, or
+// resolved after it). Nothing is invented: this uses recorded
+// created_at / resolved_at times only. Without asOf, behaviour is the
+// live "everything open right now" view used by the closeout preview.
+async function fetchCloseoutReportSources(show, options = {}) {
+
+  const asOf = options.asOf || null;
 
   const warnings = [];
 
@@ -13340,15 +13349,20 @@ async function fetchCloseoutReportSources(show) {
     return result.data || [];
   };
 
+  const noRows = { data: [], error: null };
+
   const [
     requestsResult,
     logResult,
     thisShowFollowUpsResult,
     openFollowUpsResult,
-    resolvedEventsResult,
+    showEventsResult,
     officialResult,
     crewResult,
-    cablesResult
+    cablesResult,
+    lateResolvedResult,
+    supplyResult,
+    carriedSupplyResult
   ] = await Promise.all([
 
     sb.from("Requests")
@@ -13366,15 +13380,22 @@ async function fetchCloseoutReportSources(show) {
       .eq("show_id", show.id)
       .order("created_at", { ascending: true }),
 
-    sb.from("Follow_Ups")
-      .select("*")
-      .eq("status", "open")
+    (asOf
+      ? sb.from("Follow_Ups")
+          .select("*")
+          .eq("status", "open")
+          .lte("created_at", asOf)
+      : sb.from("Follow_Ups")
+          .select("*")
+          .eq("status", "open"))
       .order("created_at", { ascending: true }),
 
+    // EVERY update logged against this show (its Show Context), for
+    // follow-ups from any show.
     sb.from("Follow_Up_Events")
-      .select("follow_up_id")
-      .eq("event_type", "resolved")
-      .eq("show_id", show.id),
+      .select("*")
+      .eq("show_id", show.id)
+      .order("event_at", { ascending: true }),
 
     sb.from("Official_Show_Report_Items")
       .select("*")
@@ -13390,15 +13411,60 @@ async function fetchCloseoutReportSources(show) {
       .select("id, cable_type, cable_length, created_at")
       .eq("action", "TAKE")
       .is("returned_at", null)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: true }),
+
+    // Closed show only: follow-ups that existed at closeout and were
+    // resolved afterwards (so they were still outstanding at closeout).
+    asOf
+      ? sb.from("Follow_Ups")
+          .select("*")
+          .gt("resolved_at", asOf)
+          .lte("created_at", asOf)
+          .order("created_at", { ascending: true })
+      : Promise.resolve(noRows),
+
+    // Supply list items belong to a show; shown as a report section.
+    sb.from("Supply_List_Items")
+      .select("*")
+      .eq("show_id", show.id)
+      .order("created_at", { ascending: true }),
+
+    // Live report only: supplies still not received from earlier shows.
+    // For a closed show their status at that time is not recorded.
+    asOf
+      ? Promise.resolve(noRows)
+      : sb.from("Supply_List_Items")
+          .select("*")
+          .eq("got_it", false)
+          .neq("show_id", show.id)
+          .order("created_at", { ascending: true })
   ]);
 
   const requests = must(requestsResult, "Requests");
   const logEntries = must(logResult, "Engineering log");
   const thisShowFollowUps = must(thisShowFollowUpsResult, "Follow-ups");
-  const openFollowUps = must(openFollowUpsResult, "Open follow-ups");
-  const resolvedEvents = must(resolvedEventsResult, "Follow-up history");
+  const openFollowUps =
+    must(openFollowUpsResult, "Open follow-ups")
+      .concat(must(lateResolvedResult, "Later-resolved follow-ups"));
+  const showEvents = must(showEventsResult, "Follow-up history");
   const officialItems = must(officialResult, "Official report items");
+
+  let supplyItems = [];
+  let carriedSupplyItems = [];
+
+  if (supplyResult.error) {
+    console.error(supplyResult.error);
+    warnings.push("Supply list items could not be loaded.");
+  } else {
+    supplyItems = supplyResult.data || [];
+  }
+
+  if (carriedSupplyResult.error) {
+    console.error(carriedSupplyResult.error);
+    warnings.push("Supplies carried from earlier shows could not be loaded.");
+  } else {
+    carriedSupplyItems = carriedSupplyResult.data || [];
+  }
 
   let crew = [];
 
@@ -13437,10 +13503,12 @@ async function fetchCloseoutReportSources(show) {
       thisShowFollowUps.concat(openFollowUps).map(f => f.id)
     );
 
-  // Follow-ups resolved during THIS show but originating elsewhere.
+  // Follow-ups that have an update (including a resolution) logged during
+  // THIS show but were not already loaded above, e.g. one that originates
+  // in another show and is no longer open.
   const missingResolvedIds =
     Array.from(
-      new Set(resolvedEvents.map(e => e.follow_up_id))
+      new Set(showEvents.map(e => e.follow_up_id))
     ).filter(id => !knownFollowUpIds.has(id));
 
   const empty = { data: [], error: null };
@@ -13494,7 +13562,7 @@ async function fetchCloseoutReportSources(show) {
     Array.from(
       new Set(
         thisShowFollowUps
-          .concat(openFollowUps, resolvedFollowUps)
+          .concat(openFollowUps, resolvedFollowUps, carriedSupplyItems)
           .map(f => f.show_id)
           .filter(
             sid =>
@@ -13530,6 +13598,7 @@ async function fetchCloseoutReportSources(show) {
   }
 
   return {
+    asOf,
     requests,
     requestNotes,
     photoCounts,
@@ -13537,6 +13606,9 @@ async function fetchCloseoutReportSources(show) {
     thisShowFollowUps,
     openFollowUps,
     resolvedFollowUps,
+    showEvents,
+    supplyItems,
+    carriedSupplyItems,
     officialItems,
     crew,
     cablesOut,
@@ -13552,6 +13624,22 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
 
   const requestIdSet =
     new Set(src.requests.map(r => r.id));
+
+  // "As of closeout" (closed shows only). Open / completed state is
+  // rebuilt ONLY from recorded times: a follow-up resolved, or a request
+  // completed, after the show closed is shown as still open at closeout
+  // and the later outcome is shown separately. Without asOf (live report,
+  // closeout preview) these helpers reduce to the plain current status.
+  const asOfMs = src.asOf ? (Date.parse(src.asOf) || null) : null;
+
+  const afterClose = iso =>
+    asOfMs !== null && !!iso && (Date.parse(iso) || 0) > asOfMs;
+
+  const followUpOpen = f =>
+    f.status === "open" || afterClose(f.resolved_at);
+
+  const requestOpen = r =>
+    r.status !== "complete" || afterClose(r.completed_at);
 
   const originFor = sid => {
 
@@ -13605,12 +13693,44 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
     return map;
   };
 
+  // Every update logged with THIS show as its Show Context, grouped by
+  // follow-up. recordedAt is the system timestamp (cannot be backdated);
+  // "at" is the engineer-entered event time.
+  const eventsByFollowUp = new Map();
+
+  (src.showEvents || []).forEach(e => {
+    if (!eventsByFollowUp.has(e.follow_up_id)) {
+      eventsByFollowUp.set(e.follow_up_id, []);
+    }
+    eventsByFollowUp.get(e.follow_up_id).push({
+      id: e.id,
+      type: e.event_type || null,
+      label: followUpEventLabel(e.event_type),
+      at: e.event_at || e.created_at || null,
+      recordedAt: e.created_at || null,
+      destination: e.destination || null,
+      notes: e.notes || "",
+      by: e.created_by || null,
+      afterCloseout: afterClose(e.created_at)
+    });
+  });
+
   const followUpDetail = f => ({
     id: f.id,
     title: f.title || "Follow-Up",
     category: f.category || null,
     kind: f.follow_up_kind === "watch" ? "watch" : "action",
-    status: f.status === "open" ? "open" : "resolved",
+    status: followUpOpen(f) ? "open" : "resolved",
+    createdAfterCloseout: afterClose(f.created_at),
+    resolvedAfterCloseout:
+      f.status === "resolved" && afterClose(f.resolved_at)
+        ? {
+            at: f.resolved_at || null,
+            by: f.resolved_by || null,
+            resolution: f.resolution || null
+          }
+        : null,
+    events: eventsByFollowUp.get(f.id) || [],
     nextAction: f.next_action || null,
     createdBy: f.created_by || null,
     createdAt: f.created_at || null,
@@ -13630,7 +13750,7 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
   // Only OPEN follow-ups carry action labels; a resolved one is done.
   const followUpLabels = f => {
     const labels = [];
-    if (f.status === "open") {
+    if (followUpOpen(f)) {
       const byCategory = closeoutLabelForCategory(f.category);
       if (byCategory) {
         labels.push(byCategory);
@@ -13708,7 +13828,7 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
     const attached = followUpsByRequest.get(r.id) || [];
 
     const attachedOpen =
-      attached.filter(f => f.status === "open");
+      attached.filter(followUpOpen);
 
     const official = officialByRequest.get(r.id) || [];
 
@@ -13733,7 +13853,7 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
     });
 
     const outstanding =
-      r.status !== "complete" || attachedOpen.length > 0;
+      requestOpen(r) || attachedOpen.length > 0;
 
     if (outstanding) {
       labels.add("outstanding");
@@ -13757,6 +13877,8 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
       request: {
         id: r.id,
         status: r.status || "new",
+        completedAfterCloseout:
+          r.status === "complete" && afterClose(r.completed_at),
         description: r.description || "",
         department: r.department || null,
         location: r.location || null,
@@ -13821,8 +13943,7 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
 
     const labels = new Set(followUpLabels(f));
 
-    const outstanding = f.status === "open";
-
+    const outstanding = followUpOpen(f);
     if (outstanding) {
       labels.add("outstanding");
     }
@@ -13884,10 +14005,10 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
           officialReportDispositionLabel(item.disposition),
         subject: item.subject || "",
         summary: item.summary || "",
+        sourceRequestId: item.source_request_id ?? null,
         by: item.created_by || null,
         at: item.created_at || null
       }));
-
 
   // ---- Counts (kept separate on purpose) ------------------------------
 
@@ -13922,7 +14043,36 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
     }
   });
 
+  // ---- Supplies (shop requests and local purchases) --------------------
+  // Supply items are not linked to issues in the data, so they are listed
+  // in their own section rather than merged into issues. got_it has no
+  // timestamp: for a closed show it is the CURRENT status, not the status
+  // at closeout.
+
+  const supplyDetail = item => ({
+    id: item.id,
+    item: item.item || "",
+    quantity: item.quantity || null,
+    destination: item.destination === "purchase" ? "purchase" : "shop",
+    notes: item.notes || null,
+    referenceUrl: item.reference_url || null,
+    hasPhoto: !!item.photo_storage_path,
+    gotIt: !!item.got_it,
+    createdBy: item.created_by || null,
+    createdAt: item.created_at || null,
+    origin: originFor(item.show_id)
+  });
+
+  const supplies = {
+    thisShow: (src.supplyItems || []).map(supplyDetail),
+    carried: (src.carriedSupplyItems || []).map(supplyDetail),
+    statusIsCurrent: asOfMs !== null
+  };
+
   const counts = {
+    suppliesOutstanding:
+      supplies.thisShow.filter(i => !i.gotIt).length +
+      supplies.carried.length,
     distinctIssues: issues.length,
     outstandingIssues:
       outstandingByOrigin.thisShow +
@@ -13930,9 +14080,9 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
       outstandingByOrigin.general,
     newRequestsThisShow: src.requests.length,
     requestsCompleted:
-      src.requests.filter(r => r.status === "complete").length,
+      src.requests.filter(r => !requestOpen(r)).length,
     requestsOpen:
-      src.requests.filter(r => r.status !== "complete").length,
+      src.requests.filter(requestOpen).length,
     resolvedFromEarlierShows:
       followUpIssues.filter(i =>
         i.state === "resolved" &&
@@ -13952,6 +14102,10 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
     generatedAt: new Date().toISOString(),
     show: {
       id: show.id,
+      active: !!show.active,
+      closedAt: show.closed_at || null,
+      closedBy: show.closed_by || null,
+      asOf: src.asOf || null,
       name: show.show_name || "",
       number: show.show_number || null,
       venue: show.venue || null,
@@ -13965,6 +14119,7 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
     issues,
     engineeringNotes,
     officialManualItems,
+    supplies,
     cablesOut: src.cablesOut || [],
     closeoutNotes: closeoutNotes || "",
     warnings: src.warnings || []
@@ -14178,7 +14333,12 @@ function buildCloseoutIssueCopyText(issue) {
 }
 
 
-function renderCloseoutReportHtml(data) {
+// options.mode: "preview" (default, the closeout screen) or "official"
+// (the Official Engineering Show Report: adds source links, an
+// Additional Items section and report-style wording).
+function renderCloseoutReportHtml(data, options = {}) {
+
+  const official = options.mode === "official";
 
   const fmtDate = iso =>
     iso ? new Date(iso).toLocaleString() : "—";
@@ -14237,14 +14397,100 @@ function renderCloseoutReportHtml(data) {
     return html;
   };
 
+  // Source links (Official report only): open the real record. The
+  // report is rebuilt when you come back.
+  const sourceLinks = issue => {
+    if (!official) {
+      return "";
+    }
+
+    const back = `{ type: 'officialReport', showId: ${Number(data.show.id)} }`;
+    let html = "";
+
+    if (issue.request) {
+      html += `
+        <button class="small-btn"
+          onclick="openRequestDetail(${Number(issue.request.id)}, ${back})">
+          OPEN REQUEST #${Number(issue.request.id)}
+        </button>
+      `;
+    }
+
+    issue.followUps.forEach(f => {
+      html += `
+        <button class="small-btn"
+          onclick="openFollowUpDetail(${Number(f.id)}, ${back})">
+          OPEN FOLLOW-UP #${Number(f.id)}
+        </button>
+      `;
+    });
+
+    return html;
+  };
+
   const copyButton = issue => `
-    <div class="no-print" style="margin-top:10px;">
+    <div class="no-print"
+      style="margin-top:10px;${official ? "display:flex;gap:8px;flex-wrap:wrap;" : ""}">
       <button class="small-btn"
         onclick="copyCloseoutIssueText('${escapeHtml(issue.key)}', this)">
         COPY REQUEST / RESOLUTION
       </button>
+      ${sourceLinks(issue)}
     </div>
   `;
+
+  // Updates logged with THIS show as their Show Context, and what happened
+  // to the follow-up after the show closed (Official report, closed show).
+  const eventsBlock = f =>
+    f.events && f.events.length
+      ? `
+        <div class="report-note report-updates">
+          <strong>Updates logged during this show:</strong>
+          ${f.events.map(e => `
+            <div class="report-event" style="margin-top:6px;">
+              <strong>${escapeHtml(e.label)}</strong>
+              — ${escapeHtml(fmtDate(e.at))}${
+                e.afterCloseout ? " (recorded after closeout)" : ""
+              }${
+                e.destination
+                  ? " · To: " + escapeHtml(e.destination)
+                  : ""
+              }
+              ${
+                e.notes
+                  ? `<div style="white-space:pre-wrap;">${escapeHtml(e.notes)}</div>`
+                  : ""
+              }
+              <div style="color:#64748b;font-size:12px;">
+                ${escapeHtml(e.by || "—")}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `
+      : "";
+
+  const laterNotes = f =>
+    (f.createdAfterCloseout
+      ? `<div class="report-note">
+          <strong>Created after this show closed.</strong>
+        </div>`
+      : "") +
+    (f.resolvedAfterCloseout
+      ? `<div class="report-note" style="border:2px solid #d97706;">
+          <strong>Resolved after this show closed</strong>
+          (still outstanding at closeout):
+          ${escapeHtml(fmtDate(f.resolvedAfterCloseout.at))}${
+            f.resolvedAfterCloseout.by
+              ? " by " + escapeHtml(f.resolvedAfterCloseout.by)
+              : ""
+          }${
+            f.resolvedAfterCloseout.resolution
+              ? " — " + escapeHtml(f.resolvedAfterCloseout.resolution)
+              : ""
+          }
+        </div>`
+      : "");
 
   const followUpBlock = f => `
     <div class="report-note">
@@ -14268,11 +14514,15 @@ function renderCloseoutReportHtml(data) {
           : ""
       }
     </div>
+    ${eventsBlock(f)}
+    ${laterNotes(f)}
   `;
 
   const requestStatusText = r => {
     if (r.status === "complete") {
-      return "Completed";
+      return r.completedAfterCloseout
+        ? "Open at closeout — completed afterwards"
+        : "Completed";
     }
     if (r.status === "in-progress") {
       return "In progress" +
@@ -14354,7 +14604,7 @@ function renderCloseoutReportHtml(data) {
         ${
           r.officialItems.map(item => `
             <div class="report-note">
-              <strong>Official report — ${escapeHtml(item.dispositionLabel)}:</strong>
+              <strong>${official ? "Additional item" : "Official report"} — ${escapeHtml(item.dispositionLabel)}:</strong>
               ${escapeHtml(item.subject)}
               ${item.summary ? " — " + escapeHtml(item.summary) : ""}
             </div>
@@ -14437,9 +14687,9 @@ function renderCloseoutReportHtml(data) {
               </div>`
             : ""
         }
-
+        ${eventsBlock(f)}
+        ${laterNotes(f)}
         ${copyButton(issue)}
-
       </div>
     `;
   };
@@ -14490,6 +14740,13 @@ function renderCloseoutReportHtml(data) {
     const items =
       data.issues.filter(i => i.primarySection === def.key);
 
+    // The Official report states only what was recorded: with no item
+    // explicitly classified as truck damage, the section is simply absent
+    // (it says nothing either way). The preview keeps its review prompt.
+    if (official && def.key === "truckDamage" && !items.length) {
+      return "";
+    }
+
     let body;
 
     if (items.length) {
@@ -14538,11 +14795,77 @@ function renderCloseoutReportHtml(data) {
 
   const s = data.show;
 
-  return `
-    <div class="report-sheet">
+  // ---- Supplies section -------------------------------------------------
+  const sup = data.supplies || { thisShow: [], carried: [], statusIsCurrent: false };
 
+  const supplyRow = i => `
+    <div class="report-note">
+      ${chip(
+        i.destination === "purchase" ? "Local purchase" : "Shop request",
+        "slate"
+      )}${chip(i.gotIt ? "Got it" : "Needed", i.gotIt ? "slate" : "amber")}
+      <strong>${escapeHtml(i.item)}</strong>${
+        i.quantity ? " — " + escapeHtml(i.quantity) : ""
+      }
+      ${i.notes ? `<div>${escapeHtml(i.notes)}</div>` : ""}
+      ${
+        i.referenceUrl
+          ? `<div><strong>Reference:</strong> ${escapeHtml(i.referenceUrl)}</div>`
+          : ""
+      }
+      <div style="color:#64748b;font-size:12px;margin-top:3px;">
+        ${i.origin.type === "carried" ? "From " + escapeHtml(i.origin.label) + " · " : ""}${
+          escapeHtml(i.createdBy || "—")
+        } · ${escapeHtml(fmtDate(i.createdAt))}${
+          i.hasPhoto ? " · reference photo on file" : ""
+        }
+      </div>
+    </div>
+  `;
+
+  const suppliesHtml =
+    (sup.thisShow.length || sup.carried.length)
+      ? `
+        <div class="report-category">
+          <h3>SUPPLIES — SHOP REQUESTS &amp; LOCAL PURCHASES
+            (${c.suppliesOutstanding} still needed)</h3>
+          <div style="color:#64748b;font-size:13px;margin-bottom:10px;">
+            ${
+              sup.statusIsCurrent
+                ? "Needed / Got it shows each item's status when this report was generated; the time an item was received is not recorded."
+                : "Status as of when this report was generated."
+            }
+          </div>
+          ${
+            sup.thisShow.length
+              ? sup.thisShow.map(supplyRow).join("")
+              : `<div class="report-none">No supply items were added during this show.</div>`
+          }
+          ${
+            sup.carried.length
+              ? `<div style="margin:14px 0 6px;font-weight:800;">
+                  STILL NEEDED FROM EARLIER SHOWS (${sup.carried.length})
+                </div>
+                ${sup.carried.map(supplyRow).join("")}`
+              : ""
+          }
+        </div>
+      `
+      : "";
+
+  const closedLine =
+    s.active
+      ? "This show is still open, so this report is live and will change until the show is closed."
+      : s.closedAt
+        ? "Show closed " + fmtDate(s.closedAt) +
+          (s.closedBy ? " by " + s.closedBy : "") +
+          ". This report is rebuilt from current records, not a saved copy. Open or completed status is shown as it stood at closeout, from recorded dates. Entries recorded after closeout are marked. Later edits to wording, equipment or classification cannot be detected."
+        : "This show is closed but its closing time was not recorded, so carried items and later resolutions reflect today's records.";
+
+  return `
+    <div class="report-sheet${official ? " official-report-sheet" : ""}">
       <div class="report-title">
-        TRUCK HELP — SHOW CLOSEOUT REPORT
+        ${official ? "TRUCK HELP — OFFICIAL ENGINEERING SHOW REPORT" : "TRUCK HELP — SHOW CLOSEOUT REPORT"}
       </div>
 
       <div class="report-show">
@@ -14562,15 +14885,36 @@ function renderCloseoutReportHtml(data) {
         print-color-adjust:exact;
         -webkit-print-color-adjust:exact;
       ">
-        PREVIEW — this show is still open and nothing has been closed or saved.
+        ${
+          official
+            ? escapeHtml(closedLine)
+            : "PREVIEW — this show is still open and nothing has been closed or saved."
+        }
         Generated ${escapeHtml(fmtDate(data.generatedAt))}.
       </div>
+
+      ${
+        official
+          ? `<div class="no-print"
+              style="margin:18px 0;display:flex;gap:10px;flex-wrap:wrap;">
+              <button class="primary"
+                onclick="openAddToShowReport()">
+                + ADD ADDITIONAL ITEM
+              </button>
+              <button class="primary"
+                onclick="printOfficialShowReport()">
+                PRINT REPORT
+              </button>
+            </div>`
+          : ""
+      }
 
       <div class="report-meta">
         ${field("Venue", s.venue)}
         ${field("MU / Main Unit", s.mainUnit)}
         ${field("Client / Network", s.clientNetwork)}
         ${field("Start Date", s.startDate)}
+        ${official ? field("Status", s.active ? "Active" : "Closed") : ""}
         ${field("Started By", s.startedBy)}
         ${
           data.crew.length
@@ -14620,6 +14964,15 @@ function renderCloseoutReportHtml(data) {
 
       </div>
 
+      ${official ? `
+        <div class="report-note" style="font-size:13px;line-height:1.6;">
+          <strong>Outstanding by origin:</strong>
+          this show ${c.outstandingByOrigin.thisShow} ·
+          carried forward ${c.outstandingByOrigin.carried} ·
+          general / no show ${c.outstandingByOrigin.general}
+          · supplies still needed ${c.suppliesOutstanding}
+        </div>
+      ` : `
       <div class="report-note" style="font-size:13px;line-height:1.6;">
         <div>
           <strong>Where issues are listed</strong>
@@ -14644,8 +14997,11 @@ function renderCloseoutReportHtml(data) {
           client damage / missing ${c.clientItems}
         </div>
       </div>
+      `}
 
       ${sectionDefs.map(sectionHtml).join("")}
+
+      ${suppliesHtml}
 
       <div class="report-category">
         <h3>ENGINEERING NOTES (${data.engineeringNotes.length})</h3>
@@ -14671,7 +15027,7 @@ function renderCloseoutReportHtml(data) {
       ${
         data.officialManualItems.length
           ? `<div class="report-category">
-              <h3>OFFICIAL REPORT ITEMS ADDED MANUALLY (${data.officialManualItems.length})</h3>
+              <h3>${official ? "ADDITIONAL ITEMS" : "OFFICIAL REPORT ITEMS ADDED MANUALLY"} (${data.officialManualItems.length})</h3>
               ${data.officialManualItems.map(item => `
                 <div class="report-note">
                   <strong>${escapeHtml(item.dispositionLabel)}:</strong>
@@ -14679,8 +15035,22 @@ function renderCloseoutReportHtml(data) {
                   ${item.summary ? " — " + escapeHtml(item.summary) : ""}
                   <div style="color:#64748b;font-size:12px;margin-top:3px;">
                     ${escapeHtml(item.by || "—")} ·
-                    ${escapeHtml(fmtDate(item.at))}
+                    ${escapeHtml(fmtDate(item.at))}${
+                      official && item.sourceRequestId
+                        ? " · Source: Request #" + escapeHtml(String(item.sourceRequestId))
+                        : ""
+                    }
                   </div>
+                  ${
+                    official && item.sourceRequestId
+                      ? `<div class="no-print" style="margin-top:8px;">
+                          <button class="small-btn"
+                            onclick="openRequestDetail(${Number(item.sourceRequestId)}, { type: 'officialReport', showId: ${Number(data.show.id)} })">
+                            OPEN REQUEST #${Number(item.sourceRequestId)}
+                          </button>
+                        </div>`
+                      : ""
+                  }
                 </div>
               `).join("")}
             </div>`
@@ -14688,7 +15058,7 @@ function renderCloseoutReportHtml(data) {
       }
 
       ${
-        data.cablesOut.length
+        data.cablesOut.length && (!official || s.active)
           ? `<div class="report-category">
               <h3>CABLES STILL OUT (${data.cablesOut.length})</h3>
               ${data.cablesOut.map(cable => `
@@ -14702,6 +15072,7 @@ function renderCloseoutReportHtml(data) {
           : ""
       }
 
+      ${official && s.active ? "" : `
       <div class="report-category">
         <h3>CLOSEOUT NOTES</h3>
         ${
@@ -14709,8 +15080,7 @@ function renderCloseoutReportHtml(data) {
             ? `<div class="report-note" style="white-space:pre-wrap;">${escapeHtml(data.closeoutNotes)}</div>`
             : `<div class="report-none">No closeout notes entered yet.</div>`
         }
-      </div>
-
+      </div>`}
     </div>
   `;
 }
