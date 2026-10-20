@@ -9714,7 +9714,7 @@ async function showSupplyList() {
 // Who can change an item from this screen. Received items from a closed
 // show are history and stay read-only; the database enforces this too.
 function supplyItemEditable(item) {
-  return (
+  return !!(
     !item.got_it ||
     (currentShow && item.show_id === currentShow.id)
   );
@@ -9914,7 +9914,7 @@ function renderSupplyForm({ mode, item, existingPhotoUrl }) {
     <h2>${mode === "edit" ? "Edit Supply Item" : "Add Supply Item"}</h2>
 
     ${
-      mode === "edit" && item && currentShow && item.show_id !== currentShow.id
+      mode === "edit" && item && (!currentShow || item.show_id !== currentShow.id)
         ? `<div class="muted" style="margin-bottom:8px;">
             This item stays on its original show.
           </div>`
