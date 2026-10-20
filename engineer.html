@@ -13968,6 +13968,16 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
     };
   });
 
+  const resolvedHereIds =
+    new Set(
+      (src.showEvents || [])
+        .filter(e =>
+          e.event_type === "resolved" &&
+          e.show_id === showId
+        )
+        .map(e => e.follow_up_id)
+    );
+
   const time = iso => (iso ? Date.parse(iso) || 0 : 0);
 
   const issues =
@@ -14083,11 +14093,21 @@ function buildCloseoutReportData(show, src, closeoutNotes) {
       src.requests.filter(r => !requestOpen(r)).length,
     requestsOpen:
       src.requests.filter(requestOpen).length,
+    // Distinct older (not originating in this show) follow-ups that were
+    // resolved DURING this show: they must have an explicit "resolved"
+    // update whose Show Context is this show. An ordinary update here followed by a resolution
+    // under General or another show does not count. The closed-show
+    // cutoff still applies because i.state is the as-of-closeout state.
     resolvedFromEarlierShows:
-      followUpIssues.filter(i =>
-        i.state === "resolved" &&
-        i.origin.type !== "this_show"
-      ).length,
+      new Set(
+        followUpIssues
+          .filter(i =>
+            i.state === "resolved" &&
+            i.origin.type !== "this_show" &&
+            resolvedHereIds.has(i.followUps[0].id)
+          )
+          .map(i => i.followUps[0].id)
+      ).size,
     endOfShowItems:
       src.requests.filter(r => r.end_of_show_report).length,
     clientItems:
