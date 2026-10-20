@@ -9898,6 +9898,8 @@ function renderSupplyForm({ mode, item, existingPhotoUrl }) {
     URL.revokeObjectURL(supplyForm.previewUrl);
   }
 
+  supplyPhotoReadToken++;
+
   supplyForm = {
     mode,
     itemId: item ? item.id : null,
@@ -10063,6 +10065,10 @@ function updateSupplyPhotoUi() {
     action = "remove";
   }
 
+  if (f.reading > 0) {
+    note = "Reading image… " + note;
+  }
+
   box.innerHTML = `
     ${
       image
@@ -10094,6 +10100,9 @@ function supplyPhotoAction(action) {
 
   const f = supplyForm;
 
+  // An explicit choice here wins over any image still being read.
+  supplyPhotoReadToken++;
+
   if (action === "dropNew") {
     if (f.previewUrl) {
       URL.revokeObjectURL(f.previewUrl);
@@ -10114,43 +10123,164 @@ function supplyPhotoAction(action) {
 }
 
 
-function setSupplyPhotoFile(file) {
+// Bytes are copied into memory the moment an image is chosen or pasted, so
+// the preview and the upload both use that same in-memory copy. A file on
+// disk that later moves, changes, is deleted, or is only in the cloud can no
+// longer break the upload ("Failed to fetch"). Nothing is accepted unless it
+// reads and decodes; on any problem the form (details and existing photo) is
+// left exactly as it was. A newer selection, or closing the dialog, discards
+// any older read still in flight.
 
-  if (!supplyForm || !file) {
-    return;
+let supplyPhotoReadToken = 0;
+
+const SUPPLY_PHOTO_NOTE = "Your item details and current photo were not changed.";
+
+function supplyPhotoStale(form, token) {
+  return supplyForm !== form || token !== supplyPhotoReadToken;
+}
+
+function decodeSupplyImage(url) {
+  return new Promise(resolve => {
+    const image = new Image();
+    let finished = false;
+    const done = result => {
+      if (!finished) {
+        finished = true;
+        resolve(result);
+      }
+    };
+    image.onload = () => done(image.naturalWidth > 0 && image.naturalHeight > 0);
+    image.onerror = () => done(false);
+    setTimeout(() => done(false), 15000);
+    image.src = url;
+  });
+}
+
+// Resolves true only if the image was accepted.
+async function setSupplyPhotoFile(file) {
+
+  const form = supplyForm;
+
+  if (!form || !file) {
+    return false;
   }
 
+  const token = ++supplyPhotoReadToken;
+
   if (!file.type || !file.type.startsWith("image/")) {
-    alert("Please choose an image file.");
-    return;
+    alert("Please choose an image file. " + SUPPLY_PHOTO_NOTE);
+    return false;
   }
 
   if (file.size > SUPPLY_PHOTO_MAX_BYTES) {
-    alert("That image is larger than 10 MB. Please use a smaller image.");
-    return;
+    alert("That image is larger than 10 MB. Please use a smaller image. " + SUPPLY_PHOTO_NOTE);
+    return false;
   }
 
-  if (supplyForm.previewUrl) {
-    URL.revokeObjectURL(supplyForm.previewUrl);
+  form.reading = (form.reading || 0) + 1;
+
+  if (supplyForm === form) {
+    updateSupplyPhotoUi();
   }
 
-  supplyForm.photoFile = file;
-  supplyForm.previewUrl = URL.createObjectURL(file);
-  supplyForm.removePhoto = false;
+  let objectUrl = null;
 
-  updateSupplyPhotoUi();
+  try {
+
+    let bytes;
+
+    try {
+      bytes = await file.arrayBuffer();
+    } catch (readError) {
+      console.error("Supply photo could not be read:", readError);
+      if (!supplyPhotoStale(form, token)) {
+        alert(
+          "This image can't be read. The file may have moved or changed, " +
+          "or it may be stored only in the cloud. Copy the image again, " +
+          "or save it to your Downloads folder and choose it. " +
+          SUPPLY_PHOTO_NOTE
+        );
+      }
+      return false;
+    }
+
+    if (supplyPhotoStale(form, token)) {
+      return false;
+    }
+
+    if (!bytes || bytes.byteLength === 0) {
+      alert("That image is empty. Please choose or paste a different one. " + SUPPLY_PHOTO_NOTE);
+      return false;
+    }
+
+    if (bytes.byteLength > SUPPLY_PHOTO_MAX_BYTES) {
+      alert("That image is larger than 10 MB. Please use a smaller image. " + SUPPLY_PHOTO_NOTE);
+      return false;
+    }
+
+    // The one in-memory copy used for the preview AND the upload.
+    const copy = new File([bytes], file.name || "image", { type: file.type });
+
+    objectUrl = URL.createObjectURL(copy);
+
+    const decodable = await decodeSupplyImage(objectUrl);
+
+    if (supplyPhotoStale(form, token)) {
+      return false;
+    }
+
+    if (!decodable) {
+      alert(
+        "This image can't be displayed (for example, a HEIC photo or a " +
+        "damaged file). Please use a JPG or PNG. " + SUPPLY_PHOTO_NOTE
+      );
+      return false;
+    }
+
+    if (form.previewUrl) {
+      URL.revokeObjectURL(form.previewUrl);
+    }
+
+    form.photoFile = copy;
+    form.previewUrl = objectUrl;
+    form.removePhoto = false;
+
+    objectUrl = null;
+
+    return true;
+
+  } finally {
+
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+    }
+
+    form.reading = Math.max(0, (form.reading || 1) - 1);
+
+    if (supplyForm === form) {
+      updateSupplyPhotoUi();
+    }
+  }
 }
 
 
-function supplyPhotoChosen(input) {
+async function supplyPhotoChosen(input) {
 
   const file =
     input && input.files
       ? input.files[0]
       : null;
 
-  if (file) {
-    setSupplyPhotoFile(file);
+  if (!file) {
+    return;
+  }
+
+  const form = supplyForm;
+  const accepted = await setSupplyPhotoFile(file);
+
+  // Let the same file be chosen again after a problem.
+  if (!accepted && supplyForm === form && input) {
+    input.value = "";
   }
 }
 
@@ -10228,6 +10358,21 @@ function supplyPhotoExtension(file) {
 }
 
 
+function supplyUploadErrorText(error) {
+
+  const message = (error && error.message) || "unknown error";
+
+  console.error("Supply photo upload failed:", error);
+
+  if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+    return "The photo couldn't be sent. Check the connection and try again, " +
+      "or choose or paste the image again.";
+  }
+
+  return message;
+}
+
+
 async function uploadSupplyPhoto(itemId, file) {
 
   const uniqueId =
@@ -10293,6 +10438,11 @@ async function saveSupplyFormImpl() {
   const f = supplyForm;
 
   if (!f) {
+    return;
+  }
+
+  if (f.reading > 0) {
+    alert("The image is still being read. Please try again in a moment.");
     return;
   }
 
@@ -10367,7 +10517,7 @@ async function saveNewSupplyItem(f, fields) {
     if (upload.error) {
       photoMessage =
         "The item was saved, but the photo could not be uploaded:\n\n" +
-        upload.error.message +
+        supplyUploadErrorText(upload.error) +
         "\n\nUse EDIT on the item to try the photo again.";
     } else {
 
@@ -10412,7 +10562,7 @@ async function saveEditedSupplyItem(f, fields) {
     if (upload.error) {
       alert(
         "Photo upload failed. Nothing was changed:\n\n" +
-        upload.error.message
+        supplyUploadErrorText(upload.error)
       );
       return;
     }
