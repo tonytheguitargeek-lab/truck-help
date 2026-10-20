@@ -9489,69 +9489,103 @@ async function showSupplyList() {
 
   await loadCurrentShow();
 
-  if (!currentShow) {
-    menuView.innerHTML = `
-      <div class="panel">
+  // Items of the active show (if any), plus items still NEEDED from earlier
+  // shows. Earlier-show items stay on their original show: they are edited
+  // and marked received in place, never moved or copied.
 
-        <div class="section-header">
-          <div>
-            <h2 style="margin:0;">Supply List</h2>
-            <div class="muted">Items to pick up or order</div>
-          </div>
+  let rows = [];
 
-          <button class="secondary"
-            onclick="showMenu()">
-            BACK
-          </button>
-        </div>
+  if (currentShow) {
 
-        <p>No active show.</p>
+    const { data: items, error } = await sb
+      .from("Supply_List_Items")
+      .select("*")
+      .eq("show_id", currentShow.id)
+      .order("created_at", { ascending: true });
 
-      </div>
-    `;
-    return;
+    if (error) {
+      menuView.innerHTML =
+        `<div class="panel">${escapeHtml(error.message)}</div>`;
+      return;
+    }
+
+    rows = items || [];
   }
 
-  const { data: items, error } = await sb
+  let carriedQuery = sb
     .from("Supply_List_Items")
     .select("*")
-    .eq("show_id", currentShow.id)
-    .order("created_at", { ascending: true });
+    .eq("got_it", false);
 
-  if (error) {
-    menuView.innerHTML =
-      `<div class="panel">${escapeHtml(error.message)}</div>`;
-    return;
+  if (currentShow) {
+    carriedQuery = carriedQuery.neq("show_id", currentShow.id);
   }
 
-  const rows = items || [];
+  const { data: carriedData, error: carriedError } =
+    await carriedQuery.order("created_at", { ascending: true });
+
+  if (carriedError) {
+    console.error(carriedError);
+  }
+
+  const carriedRows = carriedError ? [] : (carriedData || []);
+
+  const showNames = {};
+
+  const carriedShowIds =
+    [...new Set(carriedRows.map(i => i.show_id))];
+
+  if (carriedShowIds.length) {
+
+    const { data: carriedShows } = await sb
+      .from("Shows")
+      .select("id, show_name")
+      .in("id", carriedShowIds);
+
+    (carriedShows || []).forEach(sh => {
+      showNames[sh.id] = sh.show_name;
+    });
+  }
 
   const visibleRows =
     supplyListViewStatus === "gotit"
       ? rows.filter(i => i.got_it)
       : rows.filter(i => !i.got_it);
 
+  const withPhoto = async item => {
+
+    if (!item.photo_storage_path) {
+      return { ...item, signed_url: "" };
+    }
+
+    const { data: signedData, error: signedError } =
+      await sb.storage
+        .from("supply-photos")
+        .createSignedUrl(item.photo_storage_path, 3600);
+
+    return {
+      ...item,
+      signed_url:
+        signedError
+          ? ""
+          : (signedData?.signedUrl || "")
+    };
+  };
+
   const visibleWithPhotos = [];
 
   for (const item of visibleRows) {
+    visibleWithPhotos.push(await withPhoto(item));
+  }
 
-    if (item.photo_storage_path) {
+  const carriedWithPhotos = [];
 
-      const { data: signedData, error: signedError } =
-        await sb.storage
-          .from("supply-photos")
-          .createSignedUrl(item.photo_storage_path, 3600);
-
-      visibleWithPhotos.push({
-        ...item,
-        signed_url:
-          signedError
-            ? ""
-            : (signedData?.signedUrl || "")
+  if (supplyListViewStatus === "needed" || !currentShow) {
+    for (const item of carriedRows) {
+      carriedWithPhotos.push({
+        ...(await withPhoto(item)),
+        origin_label: showNames[item.show_id] || ("Show #" + item.show_id)
       });
-
-    } else {
-      visibleWithPhotos.push({ ...item, signed_url: "" });
     }
   }
 
@@ -9568,7 +9602,11 @@ async function showSupplyList() {
         <div>
           <h2 style="margin:0;">Supply List</h2>
           <div class="muted">
-            ${escapeHtml(currentShow.show_name)}
+            ${
+              currentShow
+                ? escapeHtml(currentShow.show_name)
+                : "No active show"
+            }
           </div>
         </div>
 
@@ -9578,58 +9616,90 @@ async function showSupplyList() {
         </button>
       </div>
 
-      <div class="no-print"
-        style="display:flex;gap:8px;margin:18px 0 8px 0;">
+      ${
+        currentShow
+          ? `
+            <div class="no-print"
+              style="display:flex;gap:8px;margin:18px 0 8px 0;">
 
-        <button
-          class="${supplyListViewStatus === "needed" ? "primary" : "secondary"}"
-          onclick="setSupplyListViewStatus('needed')">
-          NEEDED
-        </button>
+              <button
+                class="${supplyListViewStatus === "needed" ? "primary" : "secondary"}"
+                onclick="setSupplyListViewStatus('needed')">
+                NEEDED
+              </button>
 
-        <button
-          class="${supplyListViewStatus === "gotit" ? "primary" : "secondary"}"
-          onclick="setSupplyListViewStatus('gotit')">
-          GOT IT
-        </button>
+              <button
+                class="${supplyListViewStatus === "gotit" ? "primary" : "secondary"}"
+                onclick="setSupplyListViewStatus('gotit')">
+                GOT IT
+              </button>
 
-      </div>
+            </div>
 
-      <div class="no-print"
-        style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px 0;">
+            <div class="no-print"
+              style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 16px 0;">
 
-        <button class="primary"
-          onclick="openAddSupplyItem()">
-          + ADD ITEM
-        </button>
+              <button class="primary"
+                onclick="openAddSupplyItem()">
+                + ADD ITEM
+              </button>
 
-        <button class="primary"
-          onclick="printSupplyList()">
-          PRINT LIST
-        </button>
+              <button class="primary"
+                onclick="printSupplyList()">
+                PRINT LIST
+              </button>
 
-      </div>
+            </div>
+          `
+          : `
+            <div class="muted no-print"
+              style="margin:14px 0;">
+              Start a show to add new supply items.
+              Items still needed from earlier shows are listed below.
+            </div>
+          `
+      }
 
       <div class="no-print">
 
-        <h3>
-          REQUEST FROM SHOP (${shopItems.length})
-        </h3>
-
         ${
-          shopItems.length
-            ? shopItems.map(supplyItemCardHtml).join("")
-            : `<div class="empty">No items.</div>`
+          currentShow
+            ? `
+              <h3>
+                REQUEST FROM SHOP (${shopItems.length})
+              </h3>
+
+              ${
+                shopItems.length
+                  ? shopItems.map(i => supplyItemCardHtml(i)).join("")
+                  : `<div class="empty">No items.</div>`
+              }
+
+              <h3 style="margin-top:22px;">
+                PURCHASE FIELD / ONLINE (${purchaseItems.length})
+              </h3>
+
+              ${
+                purchaseItems.length
+                  ? purchaseItems.map(i => supplyItemCardHtml(i)).join("")
+                  : `<div class="empty">No items.</div>`
+              }
+            `
+            : ""
         }
 
-        <h3 style="margin-top:22px;">
-          PURCHASE FIELD / ONLINE (${purchaseItems.length})
-        </h3>
-
         ${
-          purchaseItems.length
-            ? purchaseItems.map(supplyItemCardHtml).join("")
-            : `<div class="empty">No items.</div>`
+          carriedWithPhotos.length
+            ? `
+              <h3 style="margin-top:22px;">
+                STILL NEEDED FROM EARLIER SHOWS (${carriedWithPhotos.length})
+              </h3>
+
+              ${carriedWithPhotos.map(i => supplyItemCardHtml(i, { carried: true })).join("")}
+            `
+            : (!currentShow
+                ? `<div class="empty">No supply items are outstanding.</div>`
+                : "")
         }
 
       </div>
@@ -9640,7 +9710,18 @@ async function showSupplyList() {
   `;
 }
 
-function supplyItemCardHtml(item) {
+
+// Who can change an item from this screen. Received items from a closed
+// show are history and stay read-only; the database enforces this too.
+function supplyItemEditable(item) {
+  return (
+    !item.got_it ||
+    (currentShow && item.show_id === currentShow.id)
+  );
+}
+
+
+function supplyItemCardHtml(item, options = {}) {
 
   const photoBlock =
     item.photo_storage_path && item.signed_url
@@ -9671,31 +9752,32 @@ function supplyItemCardHtml(item) {
       `
       : "";
 
-  const addPhotoButton =
-    item.photo_storage_path
-      ? ""
-      : `
+  const editButton =
+    supplyItemEditable(item)
+      ? `
         <button class="small-btn"
-          onclick="openAddSupplyPhoto(${item.id})">
-          ADD PHOTO
+          onclick="openEditSupplyItem(${Number(item.id)})">
+          EDIT
         </button>
-      `;
+      `
+      : "";
 
   const gotItButton =
     !item.got_it
       ? `
         <button class="small-btn"
-          onclick="markSupplyItemGotIt(${item.id})">
+          onclick="markSupplyItemGotIt(${Number(item.id)})">
           GOT IT
         </button>
       `
       : "";
 
+  // Deleting stays an active-show action.
   const deleteButton =
-    !item.got_it
+    !item.got_it && !options.carried
       ? `
         <button class="small-btn"
-          onclick='deleteSupplyItem(${item.id}, ${JSON.stringify(item.photo_storage_path || "")})'>
+          onclick='deleteSupplyItem(${Number(item.id)}, ${JSON.stringify(item.photo_storage_path || "")})'>
           DELETE
         </button>
       `
@@ -9716,6 +9798,15 @@ function supplyItemCardHtml(item) {
       </div>
 
       ${
+        options.carried
+          ? `<div style="color:#92400e;font-size:13px;margin-top:4px;">
+              From ${escapeHtml(item.origin_label || "an earlier show")}
+              · ${item.destination === "purchase" ? "Purchase field / online" : "Request from shop"}
+            </div>`
+          : ""
+      }
+
+      ${
         item.notes
           ? `<div style="color:#64748b;margin-top:6px;">${escapeHtml(item.notes)}</div>`
           : ""
@@ -9726,7 +9817,7 @@ function supplyItemCardHtml(item) {
       <div class="no-print"
         style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
         ${openLinkButton}
-        ${addPhotoButton}
+        ${editButton}
         ${gotItButton}
         ${deleteButton}
       </div>
@@ -9735,6 +9826,26 @@ function supplyItemCardHtml(item) {
   `;
 }
 
+
+// ---------------------------------------------------------------------
+// Add / Edit supply item: ONE compact form, including the photo.
+//
+//  * Photo: choose a file, or paste a copied image (Ctrl/Cmd+V) anywhere in
+//    the form. An existing photo is kept unless you choose/paste a new one
+//    (replace) or press REMOVE PHOTO.
+//  * Edit changes only: item, quantity, destination, notes, reference link
+//    and the photo path. It never sends show_id, got_it or created_by, so
+//    an item keeps its original show and identity.
+//  * Every save confirms exactly ONE row changed (the database silently
+//    ignores updates it does not allow).
+// ---------------------------------------------------------------------
+
+let supplyForm = null;
+let supplyFormInProgress = false;
+
+const SUPPLY_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+
+
 function openAddSupplyItem() {
 
   if (!currentShow) {
@@ -9742,8 +9853,73 @@ function openAddSupplyItem() {
     return;
   }
 
+  renderSupplyForm({ mode: "add", item: null, existingPhotoUrl: "" });
+}
+
+
+async function openEditSupplyItem(itemId) {
+
+  const { data: item, error } = await sb
+    .from("Supply_List_Items")
+    .select("*")
+    .eq("id", itemId)
+    .single();
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  if (!supplyItemEditable(item)) {
+    alert("Received items from a closed show can't be edited.");
+    return;
+  }
+
+  let existingPhotoUrl = "";
+
+  if (item.photo_storage_path) {
+
+    const { data: signedData, error: signedError } =
+      await sb.storage
+        .from("supply-photos")
+        .createSignedUrl(item.photo_storage_path, 3600);
+
+    existingPhotoUrl =
+      signedError ? "" : (signedData?.signedUrl || "");
+  }
+
+  renderSupplyForm({ mode: "edit", item, existingPhotoUrl });
+}
+
+
+function renderSupplyForm({ mode, item, existingPhotoUrl }) {
+
+  if (supplyForm && supplyForm.previewUrl) {
+    URL.revokeObjectURL(supplyForm.previewUrl);
+  }
+
+  supplyForm = {
+    mode,
+    itemId: item ? item.id : null,
+    existingPath: item ? (item.photo_storage_path || null) : null,
+    existingPhotoUrl: existingPhotoUrl || "",
+    photoFile: null,
+    previewUrl: null,
+    removePhoto: false
+  };
+
+  const v = item || {};
+
   modal.innerHTML = `
-    <h2>Add Supply Item</h2>
+    <h2>${mode === "edit" ? "Edit Supply Item" : "Add Supply Item"}</h2>
+
+    ${
+      mode === "edit" && item && currentShow && item.show_id !== currentShow.id
+        ? `<div class="muted" style="margin-bottom:8px;">
+            This item stays on its original show.
+          </div>`
+        : ""
+    }
 
     <label>
       Item / Description
@@ -9752,7 +9928,8 @@ function openAddSupplyItem() {
     <input
       id="supplyItemItem"
       type="text"
-      placeholder="Example: Gaff tape">
+      placeholder="Example: Gaff tape"
+      value="${escapeHtml(v.item || "")}">
 
     <label style="margin-top:12px;">
       Quantity (optional)
@@ -9761,18 +9938,23 @@ function openAddSupplyItem() {
     <input
       id="supplyItemQuantity"
       type="text"
-      placeholder="Example: 2 rolls">
+      placeholder="Example: 2 rolls"
+      value="${escapeHtml(v.quantity || "")}">
 
     <label style="margin-top:12px;">
       Destination
     </label>
 
     <select id="supplyItemDestination">
-      <option value="" disabled selected>
+      <option value="" disabled ${v.destination ? "" : "selected"}>
         Select destination…
       </option>
-      <option value="shop">REQUEST FROM SHOP</option>
-      <option value="purchase">PURCHASE FIELD / ONLINE</option>
+      <option value="shop" ${v.destination === "shop" ? "selected" : ""}>
+        REQUEST FROM SHOP
+      </option>
+      <option value="purchase" ${v.destination === "purchase" ? "selected" : ""}>
+        PURCHASE FIELD / ONLINE
+      </option>
     </select>
 
     <label style="margin-top:12px;">
@@ -9782,7 +9964,7 @@ function openAddSupplyItem() {
     <textarea
       id="supplyItemNotes"
       placeholder="Optional notes for the runner"
-    ></textarea>
+    >${escapeHtml(v.notes || "")}</textarea>
 
     <label style="margin-top:12px;">
       Reference Link (optional)
@@ -9791,61 +9973,339 @@ function openAddSupplyItem() {
     <input
       id="supplyItemReferenceUrl"
       type="text"
-      placeholder="https://…">
+      placeholder="https://…"
+      value="${escapeHtml(v.reference_url || "")}">
+
+    <label style="margin-top:12px;">
+      Photo (optional)
+    </label>
+
+    <input
+      id="supplyPhotoInput"
+      type="file"
+      accept="image/*"
+      onchange="supplyPhotoChosen(this)">
+
+    <div class="muted" style="font-size:13px;margin-top:4px;">
+      Or paste a copied image with Ctrl/Cmd + V.
+    </div>
+
+    <div id="supplyPhotoBox"></div>
 
     <button
+      id="supplyFormSaveBtn"
       class="primary full"
       style="margin-top:16px;"
-      onclick="addSupplyItem()">
-      ADD ITEM
+      onclick="saveSupplyForm()">
+      ${mode === "edit" ? "SAVE CHANGES" : "ADD ITEM"}
     </button>
 
     <button
       class="secondary full"
       style="margin-top:8px;"
-      onclick="closeModal()">
+      onclick="closeSupplyForm()">
       CANCEL
     </button>
   `;
 
   openModal();
+
+  updateSupplyPhotoUi();
 }
 
-let addSupplyItemInProgress = false;
 
-async function addSupplyItem() {
-  if (addSupplyItemInProgress) {
+function closeSupplyForm() {
+
+  if (supplyFormInProgress) {
     return;
   }
-  addSupplyItemInProgress = true;
-  try {
-    await addSupplyItemImpl();
-  } finally {
-    addSupplyItemInProgress = false;
+
+  if (supplyForm && supplyForm.previewUrl) {
+    URL.revokeObjectURL(supplyForm.previewUrl);
+  }
+
+  supplyForm = null;
+
+  closeModal();
+}
+
+
+function updateSupplyPhotoUi() {
+
+  const box = document.getElementById("supplyPhotoBox");
+
+  if (!box || !supplyForm) {
+    return;
+  }
+
+  const f = supplyForm;
+
+  let image = "";
+  let note = "";
+  let actionLabel = "";
+  let action = "";
+
+  if (f.photoFile) {
+    image = f.previewUrl;
+    note = f.existingPath
+      ? "New photo. It replaces the current one when you save."
+      : "New photo.";
+    actionLabel = f.existingPath ? "USE CURRENT PHOTO INSTEAD" : "REMOVE PHOTO";
+    action = "dropNew";
+  } else if (f.existingPath && f.removePhoto) {
+    note = "The current photo will be removed when you save.";
+    actionLabel = "KEEP CURRENT PHOTO";
+    action = "keep";
+  } else if (f.existingPath) {
+    image = f.existingPhotoUrl;
+    note = "Current photo. It is kept unless you choose or paste a new one, or remove it.";
+    actionLabel = "REMOVE PHOTO";
+    action = "remove";
+  }
+
+  box.innerHTML = `
+    ${
+      image
+        ? `<img src="${escapeHtml(image)}"
+            alt="Photo preview"
+            style="width:100%;max-width:220px;max-height:160px;object-fit:contain;background:#0f172a;border-radius:8px;display:block;margin-top:8px;">`
+        : ""
+    }
+    ${
+      note
+        ? `<div class="muted" style="font-size:13px;margin-top:6px;">${escapeHtml(note)}</div>`
+        : ""
+    }
+    ${
+      actionLabel
+        ? `<button class="small-btn" style="margin-top:8px;"
+            onclick="supplyPhotoAction('${action}')">${actionLabel}</button>`
+        : ""
+    }
+  `;
+}
+
+
+function supplyPhotoAction(action) {
+
+  if (!supplyForm) {
+    return;
+  }
+
+  const f = supplyForm;
+
+  if (action === "dropNew") {
+    if (f.previewUrl) {
+      URL.revokeObjectURL(f.previewUrl);
+    }
+    f.photoFile = null;
+    f.previewUrl = null;
+    const input = document.getElementById("supplyPhotoInput");
+    if (input) {
+      input.value = "";
+    }
+  } else if (action === "remove") {
+    f.removePhoto = true;
+  } else if (action === "keep") {
+    f.removePhoto = false;
+  }
+
+  updateSupplyPhotoUi();
+}
+
+
+function setSupplyPhotoFile(file) {
+
+  if (!supplyForm || !file) {
+    return;
+  }
+
+  if (!file.type || !file.type.startsWith("image/")) {
+    alert("Please choose an image file.");
+    return;
+  }
+
+  if (file.size > SUPPLY_PHOTO_MAX_BYTES) {
+    alert("That image is larger than 10 MB. Please use a smaller image.");
+    return;
+  }
+
+  if (supplyForm.previewUrl) {
+    URL.revokeObjectURL(supplyForm.previewUrl);
+  }
+
+  supplyForm.photoFile = file;
+  supplyForm.previewUrl = URL.createObjectURL(file);
+  supplyForm.removePhoto = false;
+
+  updateSupplyPhotoUi();
+}
+
+
+function supplyPhotoChosen(input) {
+
+  const file =
+    input && input.files
+      ? input.files[0]
+      : null;
+
+  if (file) {
+    setSupplyPhotoFile(file);
   }
 }
 
-async function addSupplyItemImpl() {
+
+// Paste a copied image (desktop). Only an image on the clipboard is taken;
+// pasting text into the fields is left alone.
+document.addEventListener("paste", event => {
+
+  if (
+    !supplyForm ||
+    modalBackdrop.classList.contains("hidden")
+  ) {
+    return;
+  }
+
+  const data = event.clipboardData;
+
+  if (!data) {
+    return;
+  }
+
+  let file = null;
+
+  for (const candidate of (data.files || [])) {
+    if (candidate.type && candidate.type.startsWith("image/")) {
+      file = candidate;
+      break;
+    }
+  }
+
+  if (!file) {
+    for (const entry of (data.items || [])) {
+      if (entry.kind === "file" && entry.type.startsWith("image/")) {
+        file = entry.getAsFile();
+        break;
+      }
+    }
+  }
+
+  if (!file) {
+    return;
+  }
+
+  event.preventDefault();
+
+  const input = document.getElementById("supplyPhotoInput");
+
+  if (input) {
+    input.value = "";
+  }
+
+  setSupplyPhotoFile(file);
+});
+
+
+function supplyPhotoExtension(file) {
+
+  const fromName =
+    (file.name || "").match(/\.(png|jpe?g|gif|webp|heic|heif)$/i);
+
+  if (fromName) {
+    return fromName[0].toLowerCase();
+  }
+
+  const byType = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/heic": ".heic",
+    "image/heif": ".heif"
+  };
+
+  return byType[file.type] || ".png";
+}
+
+
+async function uploadSupplyPhoto(itemId, file) {
+
+  const uniqueId =
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  const path = `${itemId}/${uniqueId}${supplyPhotoExtension(file)}`;
+
+  const { error } =
+    await sb.storage
+      .from("supply-photos")
+      .upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type || undefined
+      });
+
+  return { path: error ? null : path, error };
+}
+
+
+// Best effort: a leftover file is harmless (nothing references it).
+async function removeSupplyPhotoFile(path) {
+
+  try {
+    const { error } =
+      await sb.storage.from("supply-photos").remove([path]);
+
+    if (error) {
+      console.error(error);
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+
+async function saveSupplyForm() {
+  if (supplyFormInProgress) {
+    return;
+  }
+  supplyFormInProgress = true;
+  const btn = document.getElementById("supplyFormSaveBtn");
+  if (btn) {
+    btn.disabled = true;
+  }
+  try {
+    await saveSupplyFormImpl();
+  } finally {
+    supplyFormInProgress = false;
+    const again = document.getElementById("supplyFormSaveBtn");
+    if (again) {
+      again.disabled = false;
+    }
+  }
+}
+
+
+async function saveSupplyFormImpl() {
+
+  const f = supplyForm;
+
+  if (!f) {
+    return;
+  }
 
   const item =
-    document.getElementById("supplyItemItem")
-      .value.trim();
-
+    document.getElementById("supplyItemItem").value.trim();
   const quantity =
-    document.getElementById("supplyItemQuantity")
-      .value.trim();
-
+    document.getElementById("supplyItemQuantity").value.trim();
   const destination =
-    document.getElementById("supplyItemDestination")
-      .value;
-
+    document.getElementById("supplyItemDestination").value;
   const notes =
-    document.getElementById("supplyItemNotes")
-      .value.trim();
-
+    document.getElementById("supplyItemNotes").value.trim();
   const referenceUrl =
-    document.getElementById("supplyItemReferenceUrl")
-      .value.trim();
+    document.getElementById("supplyItemReferenceUrl").value.trim();
 
   if (!item) {
     alert("Please enter an item / description.");
@@ -9857,150 +10317,158 @@ async function addSupplyItemImpl() {
     return;
   }
 
-  const { error } = await sb
+  const fields = {
+    item,
+    quantity: quantity || null,
+    destination,
+    notes: notes || null,
+    reference_url: referenceUrl || null
+  };
+
+  if (f.mode === "add") {
+    await saveNewSupplyItem(f, fields);
+  } else {
+    await saveEditedSupplyItem(f, fields);
+  }
+}
+
+
+async function saveNewSupplyItem(f, fields) {
+
+  if (!currentShow) {
+    alert("No active show.");
+    return;
+  }
+
+  const { data: created, error: insertError } = await sb
     .from("Supply_List_Items")
     .insert({
       show_id: currentShow.id,
-      item,
-      quantity: quantity || null,
-      destination,
-      notes: notes || null,
-      reference_url: referenceUrl || null,
+      ...fields,
       created_by:
         selectedEngineer
           ? selectedEngineer.name
           : null
-    });
+    })
+    .select("id")
+    .single();
 
-  if (error) {
-    alert(error.message);
+  if (insertError) {
+    alert(insertError.message);
     return;
   }
 
-  closeModal();
+  let photoMessage = null;
+
+  if (f.photoFile) {
+
+    const upload = await uploadSupplyPhoto(created.id, f.photoFile);
+
+    if (upload.error) {
+      photoMessage =
+        "The item was saved, but the photo could not be uploaded:\n\n" +
+        upload.error.message +
+        "\n\nUse EDIT on the item to try the photo again.";
+    } else {
+
+      const { data: rows, error: attachError } = await sb
+        .from("Supply_List_Items")
+        .update({ photo_storage_path: upload.path })
+        .eq("id", created.id)
+        .select("id");
+
+      if (attachError || !rows || rows.length !== 1) {
+        await removeSupplyPhotoFile(upload.path);
+        photoMessage =
+          "The item was saved, but the photo could not be attached" +
+          (attachError ? ":\n\n" + attachError.message : ".") +
+          "\n\nUse EDIT on the item to try the photo again.";
+      }
+    }
+  }
+
+  closeSupplyFormAfterSave();
 
   supplyListViewStatus = "needed";
 
+  if (photoMessage) {
+    alert(photoMessage);
+  }
+
   await showSupplyList();
 }
 
-function openAddSupplyPhoto(itemId) {
 
-  modal.innerHTML = `
-    <h2>Add Reference Photo</h2>
+async function saveEditedSupplyItem(f, fields) {
 
-    <label>
-      Photo
-    </label>
+  const payload = { ...fields };
 
-    <input
-      id="supplyPhotoInput"
-      type="file"
-      accept="image/*">
+  let newPath = null;
 
-    <button
-      class="primary full"
-      style="margin-top:16px;"
-      onclick="saveSupplyPhoto(${itemId})">
-      SAVE PHOTO
-    </button>
+  if (f.photoFile) {
 
-    <button
-      class="secondary full"
-      style="margin-top:8px;"
-      onclick="closeModal()">
-      CANCEL
-    </button>
-  `;
+    const upload = await uploadSupplyPhoto(f.itemId, f.photoFile);
 
-  openModal();
-}
-
-let saveSupplyPhotoInProgress = false;
-
-async function saveSupplyPhoto(itemId) {
-  if (saveSupplyPhotoInProgress) {
-    return;
-  }
-  saveSupplyPhotoInProgress = true;
-  try {
-    await saveSupplyPhotoImpl(itemId);
-  } finally {
-    saveSupplyPhotoInProgress = false;
-  }
-}
-
-async function saveSupplyPhotoImpl(itemId) {
-
-  const input =
-    document.getElementById("supplyPhotoInput");
-
-  const file =
-    input && input.files
-      ? input.files[0]
-      : null;
-
-  if (!file) {
-    alert("Choose a photo.");
-    return;
-  }
-
-  const originalName = file.name || "photo";
-
-  const dot = originalName.lastIndexOf(".");
-
-  const extension =
-    dot >= 0
-      ? originalName.substring(dot).toLowerCase()
-      : "";
-
-  const uniqueId =
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  const storagePath = `${itemId}/${uniqueId}${extension}`;
-
-  const { error: uploadError } =
-    await sb.storage
-      .from("supply-photos")
-      .upload(
-        storagePath,
-        file,
-        {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type || undefined
-        }
+    if (upload.error) {
+      alert(
+        "Photo upload failed. Nothing was changed:\n\n" +
+        upload.error.message
       );
+      return;
+    }
 
-  if (uploadError) {
+    newPath = upload.path;
+    payload.photo_storage_path = newPath;
+
+  } else if (f.existingPath && f.removePhoto) {
+    payload.photo_storage_path = null;
+  }
+
+  const { data: rows, error } = await sb
+    .from("Supply_List_Items")
+    .update(payload)
+    .eq("id", f.itemId)
+    .select("id");
+
+  if (error || !rows || rows.length !== 1) {
+
+    // Keep the old photo exactly as it was; drop the upload that was not used.
+    if (newPath) {
+      await removeSupplyPhotoFile(newPath);
+    }
+
     alert(
-      "Photo upload failed:\n\n" +
-      uploadError.message
+      error
+        ? "Nothing was changed:\n\n" + error.message
+        : "Nothing was changed. This item can't be edited from here " +
+          "(for example, a received item from a closed show)."
     );
     return;
   }
 
-  const { error: updateError } =
-    await sb
-      .from("Supply_List_Items")
-      .update({ photo_storage_path: storagePath })
-      .eq("id", itemId);
-
-  if (updateError) {
-    alert(
-      "Photo uploaded, but the item could not be updated:\n\n" +
-      updateError.message
-    );
-    return;
+  // The old file is only removed AFTER the row points at the new one (or
+  // after an explicit REMOVE PHOTO).
+  if (f.existingPath && (newPath || payload.photo_storage_path === null)) {
+    await removeSupplyPhotoFile(f.existingPath);
   }
+
+  closeSupplyFormAfterSave();
+
+  await showSupplyList();
+}
+
+
+function closeSupplyFormAfterSave() {
+
+  if (supplyForm && supplyForm.previewUrl) {
+    URL.revokeObjectURL(supplyForm.previewUrl);
+  }
+
+  supplyForm = null;
 
   closeModal();
-
-  await showSupplyList();
 }
+
 
 let markSupplyItemGotItInProgress = false;
 
@@ -10018,13 +10486,21 @@ async function markSupplyItemGotIt(itemId) {
 
 async function markSupplyItemGotItImpl(itemId) {
 
-  const { error } = await sb
+  const { data: rows, error } = await sb
     .from("Supply_List_Items")
     .update({ got_it: true })
-    .eq("id", itemId);
+    .eq("id", itemId)
+    .select("id");
 
   if (error) {
     alert(error.message);
+    return;
+  }
+
+  // The database ignores updates it does not allow without raising an
+  // error, so confirm exactly one row really changed.
+  if (!rows || rows.length !== 1) {
+    alert("Nothing was changed. This item could not be marked as received.");
     return;
   }
 
